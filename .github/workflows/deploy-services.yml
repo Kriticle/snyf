@@ -1,0 +1,153 @@
+name: deploy-services
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "services/**"
+      - "shared/**"
+      - "functions/**"
+      - "requirements.txt"
+      - ".github/workflows/deploy-services.yml"
+  workflow_dispatch:
+    inputs:
+      service:
+        description: "Service to deploy: all, ingestion_api, search_api, enrichment_worker"
+        required: true
+        default: "all"
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+  ECS_CLUSTER: ${{ vars.ECS_CLUSTER }}
+  PROJECT_ENV_PREFIX: ${{ vars.PROJECT_ENV_PREFIX || 'fashion-enrichment-dev' }}
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      ingestion_api: ${{ steps.filter.outputs.ingestion_api }}
+      search_api: ${{ steps.filter.outputs.search_api }}
+      enrichment_worker: ${{ steps.filter.outputs.enrichment_worker }}
+      shared: ${{ steps.filter.outputs.shared }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            ingestion_api:
+              - 'services/ingestion_api/**'
+            search_api:
+              - 'services/search_api/**'
+            enrichment_worker:
+              - 'services/enrichment_worker/**'
+            shared:
+              - 'shared/**'
+              - 'functions/**'
+              - 'requirements.txt'
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run tests
+        run: python -m unittest discover -s tests -v
+
+  deploy:
+    needs: [changes, test]
+    runs-on: ubuntu-latest
+    environment: production
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: ingestion_api
+            ecs_service_suffix: ingestion-api
+            ecr_repo_suffix: ingestion-api
+          - service: search_api
+            ecs_service_suffix: search-api
+            ecr_repo_suffix: search-api
+          - service: enrichment_worker
+            ecs_service_suffix: enrichment-worker
+            ecr_repo_suffix: enrichment-worker
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Decide deploy
+        id: should
+        env:
+          INGESTION_CHANGED: ${{ needs.changes.outputs.ingestion_api }}
+          SEARCH_CHANGED: ${{ needs.changes.outputs.search_api }}
+          WORKER_CHANGED: ${{ needs.changes.outputs.enrichment_worker }}
+          SHARED_CHANGED: ${{ needs.changes.outputs.shared }}
+          REQUESTED_SERVICE: ${{ github.event.inputs.service || 'changed' }}
+        run: |
+          changed="false"
+          case "${{ matrix.service }}" in
+            ingestion_api) changed="$INGESTION_CHANGED" ;;
+            search_api) changed="$SEARCH_CHANGED" ;;
+            enrichment_worker) changed="$WORKER_CHANGED" ;;
+          esac
+
+          if [[ "$REQUESTED_SERVICE" == "all" || "$REQUESTED_SERVICE" == "${{ matrix.service }}" || "$changed" == "true" || "$SHARED_CHANGED" == "true" ]]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Configure AWS credentials
+        if: steps.should.outputs.deploy == 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        if: steps.should.outputs.deploy == 'true'
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        if: steps.should.outputs.deploy == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push image
+        if: steps.should.outputs.deploy == 'true'
+        env:
+          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+          REPOSITORY: ${{ env.PROJECT_ENV_PREFIX }}/${{ matrix.ecr_repo_suffix }}
+        run: |
+          docker buildx build \
+            --platform linux/amd64 \
+            -f services/${{ matrix.service }}/Dockerfile \
+            -t "$ECR_REGISTRY/$REPOSITORY:$IMAGE_TAG" \
+            -t "$ECR_REGISTRY/$REPOSITORY:latest" \
+            --push \
+            .
+
+      - name: Deploy ECS service
+        if: steps.should.outputs.deploy == 'true'
+        run: |
+          aws ecs update-service \
+            --cluster "$ECS_CLUSTER" \
+            --service "${PROJECT_ENV_PREFIX}-${{ matrix.ecs_service_suffix }}" \
+            --force-new-deployment
+          aws ecs wait services-stable \
+            --cluster "$ECS_CLUSTER" \
+            --services "${PROJECT_ENV_PREFIX}-${{ matrix.ecs_service_suffix }}"

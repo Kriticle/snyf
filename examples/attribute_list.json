@@ -1,0 +1,9 @@
+{
+  "attributes": [
+    { "name": "occasion", "weight": 1.0 },
+    { "name": "silhouette", "weight": 1.0 },
+    { "name": "fabric_feel", "weight": 1.0 },
+    { "name": "trend_vibe", "weight": 1.0 },
+    { "name": "print_energy", "weight": 1.0 }
+  ]
+}

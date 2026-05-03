@@ -1,0 +1,2 @@
+"""Enrichment worker service."""
+

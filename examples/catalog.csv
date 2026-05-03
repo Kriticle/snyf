@@ -1,0 +1,5 @@
+product_id,collection_id,name,category,image_urls,attributes,description,price,currency,brand
+prod_001,coll_ss25,Linen Wide-Leg Trouser,bottoms,https://cdn.example.com/p1a.jpg|https://cdn.example.com/p1b.jpg,"[""occasion"",""silhouette"",""fabric_feel"",""trend_vibe"",""color""]","Relaxed cream linen trousers with a flowy wide leg for holiday travel.",89.00,USD,Arket
+prod_002,coll_ss25,Structured Navy Blazer,jacket,https://cdn.example.com/p2.jpg,"[""occasion"",""silhouette"",""fabric_feel"",""trend_vibe"",""color""]","Tailored navy blazer with structured office energy.",159.00,USD,Arket
+prod_003,coll_ss25,Printed Beach Dress,dresses,https://cdn.example.com/p3.jpg,"[""occasion"",""silhouette"",""fabric_feel"",""trend_vibe"",""color""]","Bold red print midi dress made for beach vacation dinners.",129.00,USD,Arket
+
