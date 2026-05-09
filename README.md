@@ -106,6 +106,76 @@ export INGESTION_URL=http://localhost:8000
 export SEARCH_URL=http://localhost:8001
 ```
 
+Set the deployed API Gateway URL:
+
+```bash
+export API_URL=https://xydj4rm9eg.execute-api.us-east-1.amazonaws.com
+```
+
+### Deployed End-to-End Smoke Test
+
+This uses the currently deployed AWS stack, OpenAI-backed enrichment, and the shared smoke-test attribute list in S3.
+
+```bash
+export API_URL=https://xydj4rm9eg.execute-api.us-east-1.amazonaws.com
+export COLLECTION_ID="readme_smoke_$(date +%s)"
+
+SIGNUP_RESPONSE=$(curl -sS -X POST "$API_URL/auth/signup" \
+  -H "content-type: application/json" \
+  -d '{"email":"readme-smoke-'"$(date +%s)"'@example.com","password":"password123"}')
+
+export API_KEY=$(printf '%s' "$SIGNUP_RESPONSE" | jq -r '.api_key')
+
+cat > /tmp/fashion_catalog.csv <<EOF
+product_id,collection_id,name,image_urls,category,description,price,currency,brand
+prod_001,$COLLECTION_ID,Flowy Resort Dress,https://images.unsplash.com/photo-1515372039744-b8f02a3ae446?w=800,dresses,"Flowy ivory linen midi dress for beach vacation dinners",128,USD,TestBrand
+prod_002,$COLLECTION_ID,Structured Office Blazer,https://images.unsplash.com/photo-1591369822096-ffd140ec948f?w=800,jacket,"Tailored navy blazer with structured office energy",188,USD,TestBrand
+EOF
+
+curl -sS -X POST "$API_URL/collections/$COLLECTION_ID/upload" \
+  -H "x-api-key: $API_KEY" \
+  -F attribute_list_id=smoke-fashion-v1 \
+  -F attribute_list_uri=s3://fashion-enrichment-dev-uploads-20260501115014085400000001/attributes/smoke-fashion-v1.json \
+  -F process_now=false \
+  -F csv_file=@/tmp/fashion_catalog.csv | jq
+
+sleep 45
+
+curl -sS -X POST "$API_URL/search" \
+  -H "content-type: application/json" \
+  -H "x-api-key: $API_KEY" \
+  -d '{
+    "collection_id": "'"$COLLECTION_ID"'",
+    "query": "flowy beach vacation look",
+    "top_k": 5
+  }' | jq
+```
+
+Expected search response includes ranked products and `image_urls`:
+
+```json
+{
+  "results": [
+    {
+      "product_id": "prod_001",
+      "name": "Flowy Resort Dress",
+      "image_urls": [
+        "https://images.unsplash.com/photo-1515372039744-b8f02a3ae446?w=800"
+      ],
+      "score": 0.95,
+      "enriched_attrs": {
+        "occasion": "vacation",
+        "silhouette": "flowy"
+      },
+      "category": "dresses",
+      "price": 128.0,
+      "currency": "USD",
+      "brand": "TestBrand"
+    }
+  ]
+}
+```
+
 ### Health
 
 ```bash
@@ -263,6 +333,9 @@ Example response:
     {
       "product_id": "prod_003",
       "name": "Printed Beach Dress",
+      "image_urls": [
+        "https://cdn.example.com/p3.jpg"
+      ],
       "score": 0.58,
       "feature_scores": {
         "_retrieval_semantic": 0.58,
