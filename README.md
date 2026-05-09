@@ -90,12 +90,11 @@ Each `collection_id` is registered with:
 ```json
 {
   "collection_id": "coll_ss25",
-  "attribute_list_id": "fashion-v1",
-  "attribute_list_uri": "s3://customer-config/attributes/fashion-v1.json"
+  "attribute_list_id": "fashion-v1"
 }
 ```
 
-Locally this is stored in `data/collections.json`. In AWS it lives in the `Collections` DynamoDB table.
+Customers send only `attribute_list_id`; the API resolves the backing URI from the configured attribute-list bucket/prefix and stores that internal URI with the collection. Locally this is stored in `data/collections.json`. In AWS it lives in the `Collections` DynamoDB table.
 
 ## API Curl Tests
 
@@ -125,6 +124,10 @@ SIGNUP_RESPONSE=$(curl -sS -X POST "$API_URL/auth/signup" \
   -d '{"email":"readme-smoke-'"$(date +%s)"'@example.com","password":"password123"}')
 
 export API_KEY=$(printf '%s' "$SIGNUP_RESPONSE" | jq -r '.api_key')
+export REFRESH_TOKEN=$(printf '%s' "$SIGNUP_RESPONSE" | jq -r '.refresh_token')
+
+curl -sS "$API_URL/auth/api-keys" \
+  -H "authorization: Bearer $REFRESH_TOKEN" | jq
 
 cat > /tmp/fashion_catalog.csv <<EOF
 product_id,collection_id,name,image_urls,category,description,price,currency,brand
@@ -135,7 +138,6 @@ EOF
 curl -sS -X POST "$API_URL/collections/$COLLECTION_ID/upload" \
   -H "x-api-key: $API_KEY" \
   -F attribute_list_id=smoke-fashion-v1 \
-  -F attribute_list_uri=s3://fashion-enrichment-dev-uploads-20260501115014085400000001/attributes/smoke-fashion-v1.json \
   -F process_now=false \
   -F csv_file=@/tmp/fashion_catalog.csv | jq
 
@@ -188,6 +190,8 @@ Expected response:
 ```json
 { "status": "ok" }
 ```
+
+The deployed API Gateway currently exposes the product API routes, not a public `/health` route. Use signup, upload, or search smoke tests to verify the deployed stack from outside the VPC.
 
 ### Signup
 
@@ -261,24 +265,22 @@ Example response:
 
 ### Upload / Index CSV
 
-Local file-based attribute URI:
+Local upload:
 
 ```bash
 curl -s -X POST "$INGESTION_URL/collections/coll_ss25/upload" \
   -H "x-api-key: $API_KEY" \
   -F attribute_list_id=fashion-v1 \
-  -F attribute_list_uri=examples/attribute_list.json \
   -F process_now=true \
   -F csv_file=@examples/catalog.csv
 ```
 
-Production-style S3 attribute URI:
+Production upload:
 
 ```bash
 curl -s -X POST "$INGESTION_URL/collections/coll_ss25/upload" \
   -H "x-api-key: $API_KEY" \
   -F attribute_list_id=fashion-v1 \
-  -F attribute_list_uri=s3://customer-config-bucket/attributes/fashion-v1.json \
   -F process_now=false \
   -F csv_file=@examples/catalog.csv
 ```
@@ -412,7 +414,7 @@ If the query LLM extracts no attributes, search falls back to retrieval semantic
 2. Count CSV rows.
 3. Reserve ingestion rows against the customer's monthly plan.
 4. Load and validate the attribute list.
-5. Register `collection_id -> attribute_list_id/uri`.
+5. Register `collection_id -> attribute_list_id`, plus the backend-resolved internal S3 URI.
 6. Validate CSV rows permissively.
 7. Enqueue one product message per accepted row.
 8. Worker downloads images, calls enrichment LLM, embeds enriched text, and writes product state plus OpenSearch document.
@@ -556,6 +558,48 @@ Build locally:
 docker build -f services/ingestion_api/Dockerfile -t fashion-ingestion-api .
 docker build -f services/search_api/Dockerfile -t fashion-search-api .
 docker build -f services/enrichment_worker/Dockerfile -t fashion-enrichment-worker .
+```
+
+Build and push ECS-compatible images from Apple Silicon or any non-amd64 machine:
+
+```bash
+AWS_ACCOUNT_ID=311549965729
+AWS_REGION=us-east-1
+ECR_BASE="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/fashion-enrichment-dev"
+
+aws ecr get-login-password --region "$AWS_REGION" \
+  | docker login --username AWS --password-stdin "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
+
+docker buildx build --platform linux/amd64 \
+  -t "$ECR_BASE/ingestion-api:latest" \
+  --push -f services/ingestion_api/Dockerfile .
+
+docker buildx build --platform linux/amd64 \
+  -t "$ECR_BASE/search-api:latest" \
+  --push -f services/search_api/Dockerfile .
+
+docker buildx build --platform linux/amd64 \
+  -t "$ECR_BASE/enrichment-worker:latest" \
+  --push -f services/enrichment_worker/Dockerfile .
+
+aws ecs update-service --region "$AWS_REGION" \
+  --cluster fashion-enrichment-dev \
+  --service fashion-enrichment-dev-ingestion-api \
+  --force-new-deployment
+
+aws ecs update-service --region "$AWS_REGION" \
+  --cluster fashion-enrichment-dev \
+  --service fashion-enrichment-dev-search-api \
+  --force-new-deployment
+
+aws ecs update-service --region "$AWS_REGION" \
+  --cluster fashion-enrichment-dev \
+  --service fashion-enrichment-dev-enrichment-worker \
+  --force-new-deployment
+
+aws ecs wait services-stable --region "$AWS_REGION" \
+  --cluster fashion-enrichment-dev \
+  --services fashion-enrichment-dev-ingestion-api fashion-enrichment-dev-search-api fashion-enrichment-dev-enrichment-worker
 ```
 
 ## Production Extension Points

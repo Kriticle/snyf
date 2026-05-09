@@ -174,9 +174,20 @@ resource "aws_dynamodb_table" "sessions" {
     type = "S"
   }
 
+  attribute {
+    name = "refresh_token_hash"
+    type = "S"
+  }
+
   global_secondary_index {
     name            = "customer-sessions"
     hash_key        = "customer_id"
+    projection_type = "ALL"
+  }
+
+  global_secondary_index {
+    name            = "refresh-token-index"
+    hash_key        = "refresh_token_hash"
     projection_type = "ALL"
   }
 
@@ -783,6 +794,8 @@ locals {
     JOB_ERRORS_TABLE_NAME = aws_dynamodb_table.ingestion_job_errors.name
     PRODUCT_QUEUE_URL     = aws_sqs_queue.product_jobs.url
     UPLOAD_BUCKET         = aws_s3_bucket.uploads.bucket
+    ATTRIBUTE_LIST_BUCKET = aws_s3_bucket.uploads.bucket
+    ATTRIBUTE_LIST_PREFIX = "attributes"
     OPENSEARCH_ENDPOINT   = "https://${aws_opensearch_domain.catalog.endpoint}"
     DEFAULT_VECTOR_INDEX  = "${local.name}-products"
     LLM_PROVIDER          = var.llm_provider
@@ -819,7 +832,7 @@ resource "aws_apigatewayv2_api" "http" {
   protocol_type = "HTTP"
 
   cors_configuration {
-    allow_headers = ["authorization", "content-type"]
+    allow_headers = ["authorization", "content-type", "x-api-key"]
     allow_methods = ["GET", "POST", "DELETE", "OPTIONS"]
     allow_origins = var.api_cors_allowed_origins
     max_age       = 3600
@@ -853,6 +866,18 @@ resource "aws_apigatewayv2_route" "signup" {
 resource "aws_apigatewayv2_route" "login" {
   api_id    = aws_apigatewayv2_api.http.id
   route_key = "POST /auth/login"
+  target    = "integrations/${aws_apigatewayv2_integration.alb.id}"
+}
+
+resource "aws_apigatewayv2_route" "list_api_keys" {
+  api_id    = aws_apigatewayv2_api.http.id
+  route_key = "GET /auth/api-keys"
+  target    = "integrations/${aws_apigatewayv2_integration.alb.id}"
+}
+
+resource "aws_apigatewayv2_route" "create_api_key" {
+  api_id    = aws_apigatewayv2_api.http.id
+  route_key = "POST /auth/api-keys"
   target    = "integrations/${aws_apigatewayv2_integration.alb.id}"
 }
 

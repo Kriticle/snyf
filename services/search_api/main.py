@@ -7,7 +7,7 @@ from dataclasses import asdict
 from shared.models import SearchRequest
 from shared.auth import AuthError, AuthService
 from shared.plans import PlanLimitError, UsageService
-from shared.search import SearchService
+from shared.search import SearchService, validate_top_k
 from shared.store_factory import create_store
 from shared.storage import JsonStore
 
@@ -45,6 +45,10 @@ def create_app(data_dir: str = "data"):
     @app.post("/search")
     def search(payload: SearchPayload, x_api_key: str | None = Header(default=None)):
         customer = authenticate_request(auth_service, x_api_key)
+        try:
+            validate_top_k(payload.top_k)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         try:
             usage_service.reserve_search(customer)
         except PlanLimitError as exc:

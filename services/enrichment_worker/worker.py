@@ -36,6 +36,8 @@ class EnrichmentWorker:
             self.store.delete_record(message.collection_id, message.product_id)
             return None
 
+        validate_image_urls(message.image_urls)
+
         existing = self.store.get_record(message.collection_id, message.product_id)
         version = (existing.version + 1) if existing else 1
         record = ProductRecord(
@@ -56,6 +58,7 @@ class EnrichmentWorker:
 
         try:
             image_bytes = await self._download_images(message.image_urls)
+            validate_image_bytes(image_bytes, expected_count=len(message.image_urls))
             llm_response = await maybe_await(self.enrich_fn(
                 message.product_id,
                 message.metadata,
@@ -63,8 +66,10 @@ class EnrichmentWorker:
                 message.attribute_schema,
             ))
             attrs = parse_enrichment_response(llm_response, message.attribute_schema)
+            validate_enriched_attrs(attrs)
             text = enriched_text(message.metadata, attrs)
             embedding = await maybe_await(self.embed_fn(text))
+            validate_embedding(embedding)
             record.enriched_attrs = attrs
             record.enriched_text = text
             record.embedding = embedding
@@ -132,6 +137,43 @@ def parse_enrichment_response(response: str | dict[str, Any], attribute_schema: 
     if not isinstance(parsed, dict):
         raise ValueError("enrich() must return a JSON object string or dict.")
     return {attribute: parsed.get(attribute) for attribute in attribute_schema}
+
+
+def validate_image_urls(image_urls: list[str]) -> None:
+    if not image_urls:
+        raise ValueError("Product must include at least one image URL for enrichment.")
+    invalid = [url for url in image_urls if not isinstance(url, str) or not url.startswith("https://")]
+    if invalid:
+        raise ValueError(f"Product contains invalid image URLs: {invalid}")
+
+
+def validate_enriched_attrs(attrs: dict[str, Any]) -> None:
+    if not attrs or not any(has_value(value) for value in attrs.values()):
+        raise ValueError("enrich() returned no usable enriched attributes.")
+
+
+def validate_image_bytes(image_bytes: list[bytes], expected_count: int) -> None:
+    if len(image_bytes) != expected_count:
+        raise ValueError("Downloaded image count does not match image URL count.")
+    if not image_bytes or not all(isinstance(image, bytes) and image for image in image_bytes):
+        raise ValueError("One or more product images downloaded as empty bytes.")
+
+
+def validate_embedding(embedding: list[float]) -> None:
+    if not isinstance(embedding, list) or not embedding:
+        raise ValueError("embed() returned an empty embedding.")
+    if not all(isinstance(value, (int, float)) for value in embedding):
+        raise ValueError("embed() returned a non-numeric embedding.")
+
+
+def has_value(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, (list, dict, tuple, set)):
+        return bool(value)
+    return True
 
 
 async def maybe_await(value):

@@ -131,6 +131,12 @@ class JsonStore:
             encoding="utf-8",
         )
 
+    def get_session_by_refresh_hash(self, refresh_token_hash: str) -> Session | None:
+        for session in self._sessions().values():
+            if session.refresh_token_hash == refresh_token_hash:
+                return session
+        return None
+
     def upsert_api_key(self, api_key: ApiKey) -> None:
         api_keys = self._api_keys()
         api_keys[api_key.api_key_id] = api_key
@@ -144,6 +150,13 @@ class JsonStore:
             if api_key.api_key_hash == api_key_hash:
                 return api_key
         return None
+
+    def api_keys_for_customer(self, customer_id: str) -> list[ApiKey]:
+        return [
+            api_key
+            for api_key in self._api_keys().values()
+            if api_key.customer_id == customer_id
+        ]
 
     def get_usage_counter(self, customer_id: str, period: str) -> UsageCounter:
         usage_key = f"{customer_id}#{period}"

@@ -19,13 +19,13 @@ Search:         http://localhost:8001
 
 Catalog ingestion and search use API-key authentication.
 
-Send the key returned by signup in every protected request:
+Send a customer API key in every protected ingestion/search request:
 
 ```http
 x-api-key: fep_...
 ```
 
-Login sessions are separate from catalog API authorization. `POST /auth/signup` and `POST /auth/login` return session objects for product UI flows, but ingestion and search are authorized by `x-api-key`.
+Login sessions are separate from catalog API authorization. `POST /auth/signup` and `POST /auth/login` return session objects for product UI flows. UI-only API-key management endpoints use the `refresh_token` as a bearer token.
 
 ## Errors
 
@@ -145,6 +145,36 @@ curl -sS -X POST "$API_URL/auth/login" \
   -d '{"email":"buyer@example.com","password":"password123"}'
 ```
 
+## API Keys
+
+Lists the customer's API keys. New keys include the retrievable `api_key` value. Older keys created before this field existed may have `api_key: null`.
+
+```http
+GET /auth/api-keys
+authorization: Bearer <refresh_token>
+```
+
+Example:
+
+```bash
+curl -sS "$API_URL/auth/api-keys" \
+  -H "authorization: Bearer $REFRESH_TOKEN"
+```
+
+Creates another API key for the logged-in customer and returns the raw key.
+
+```http
+POST /auth/api-keys
+authorization: Bearer <refresh_token>
+```
+
+Example:
+
+```bash
+curl -sS -X POST "$API_URL/auth/api-keys" \
+  -H "authorization: Bearer $REFRESH_TOKEN"
+```
+
 ## Upload Catalog CSV
 
 Uploads a catalog CSV, registers the collection's attribute list, and queues one enrichment message per accepted product row.
@@ -160,8 +190,7 @@ Form fields:
 | Field | Required | Description |
 | --- | --- | --- |
 | `csv_file` | Yes | CSV file containing products |
-| `attribute_list_uri` | Yes for production | S3 URI or local path to the attribute-list JSON |
-| `attribute_list_id` | Recommended | Stable id/name for the attribute list |
+| `attribute_list_id` | Yes for production | Attribute-list file name, for example `fashion-v1` or `fashion-v1.json`. The backend resolves this under the configured attribute-list bucket/prefix. |
 | `attributes` | Local/dev fallback | Inline comma-separated or JSON array of attributes |
 | `process_now` | Optional | Local/dev helper. In production use `false`; ECS worker processes SQS. |
 
@@ -196,7 +225,6 @@ Example:
 curl -sS -X POST "$API_URL/collections/coll_ss25/upload" \
   -H "x-api-key: $API_KEY" \
   -F attribute_list_id=fashion-v1 \
-  -F attribute_list_uri=s3://your-bucket/attributes/fashion-v1.json \
   -F process_now=false \
   -F csv_file=@catalog.csv
 ```
@@ -227,7 +255,7 @@ Response:
       },
       "attribute_schema": ["occasion", "silhouette", "fabric_feel"],
       "operation": "UPSERT",
-      "attribute_list_uri": "s3://your-bucket/attributes/fashion-v1.json",
+      "attribute_list_uri": "s3://configured-attribute-bucket/attributes/fashion-v1.json",
       "version": 0
     }
   ]

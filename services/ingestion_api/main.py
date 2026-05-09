@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import csv
 import json
+import os
 from dataclasses import asdict
 from io import StringIO
 from pathlib import Path
@@ -57,22 +58,39 @@ def create_app(data_dir: str = "data"):
         except AuthError as exc:
             raise HTTPException(status_code=401, detail=str(exc)) from exc
 
+    @app.get("/auth/api-keys")
+    def list_api_keys(authorization: str | None = Header(default=None)):
+        try:
+            return {"api_keys": auth_service.list_api_keys(bearer_token(authorization))}
+        except AuthError as exc:
+            raise HTTPException(status_code=401, detail=str(exc)) from exc
+
+    @app.post("/auth/api-keys")
+    def create_api_key(authorization: str | None = Header(default=None)):
+        try:
+            return auth_service.create_customer_api_key(bearer_token(authorization))
+        except AuthError as exc:
+            raise HTTPException(status_code=401, detail=str(exc)) from exc
+
     @app.post("/collections/{collection_id}/upload")
     async def upload_collection(
         collection_id: str,
         csv_file: UploadFile = File(...),
         x_api_key: str | None = Header(default=None),
         attribute_list_id: str | None = Form(None),
-        attribute_list_uri: str | None = Form(None),
         attributes: str | None = Form(None),
         process_now: bool = Form(True),
     ):
         customer = authenticate_request(auth_service, x_api_key)
+        existing_collection = store.get_collection_config(collection_id)
+        if existing_collection is not None and existing_collection.customer_id != customer.customer_id:
+            raise HTTPException(status_code=404, detail="Collection not found.")
         csv_text = (await csv_file.read()).decode("utf-8")
         try:
             usage_service.reserve_ingestion_rows(customer, count_csv_rows(csv_text))
         except PlanLimitError as exc:
             raise HTTPException(status_code=402, detail=str(exc)) from exc
+        attribute_list_uri = resolve_attribute_list_uri(attribute_list_id)
         resolved_attributes = resolve_attributes(attributes, attribute_list_uri)
         service = CsvIngestionService(
             store,
@@ -80,6 +98,7 @@ def create_app(data_dir: str = "data"):
             attributes=resolved_attributes,
             attribute_list_uri=attribute_list_uri,
             attribute_list_id=attribute_list_id,
+            expected_collection_id=collection_id,
         )
         result = service.ingest_csv(csv_text, job_id=f"job_{collection_id}")
         if process_now:
@@ -147,11 +166,42 @@ def resolve_attributes(attributes: str | None, attribute_list_uri: str | None) -
     return parse_attributes(attributes)
 
 
+def resolve_attribute_list_uri(attribute_list_id: str | None) -> str | None:
+    if not attribute_list_id:
+        return None
+    file_name = attribute_list_id.strip()
+    if not file_name:
+        return None
+    if "://" in file_name or "/" in file_name or "\\" in file_name:
+        raise HTTPException(status_code=400, detail="attribute_list_id must be a file name, not a URI or path.")
+    if not file_name.endswith(".json"):
+        file_name = f"{file_name}.json"
+
+    base_uri = os.getenv("ATTRIBUTE_LIST_BASE_URI")
+    if base_uri:
+        return f"{base_uri.rstrip('/')}/{file_name}"
+
+    bucket = os.getenv("ATTRIBUTE_LIST_BUCKET") or os.getenv("UPLOAD_BUCKET")
+    prefix = os.getenv("ATTRIBUTE_LIST_PREFIX", "attributes").strip("/")
+    if not bucket:
+        raise HTTPException(status_code=500, detail="Attribute list bucket is not configured.")
+    return f"s3://{bucket}/{prefix}/{file_name}" if prefix else f"s3://{bucket}/{file_name}"
+
+
 def authenticate_request(auth_service: AuthService, x_api_key: str | None):
     try:
         return auth_service.authenticate_api_key(x_api_key)
     except AuthError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
+
+
+def bearer_token(authorization: str | None) -> str | None:
+    if not authorization:
+        return None
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not token.strip():
+        return None
+    return token.strip()
 
 
 def count_csv_rows(csv_text: str) -> int:

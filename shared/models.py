@@ -102,6 +102,7 @@ class ApiKey:
     customer_id: str
     api_key_hash: str
     status: str
+    api_key_value: str | None = None
     created_at: str = field(default_factory=lambda: utc_now())
     last_used_at: str | None = None
 

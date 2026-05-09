@@ -162,6 +162,15 @@ class AwsStore:
     def upsert_session(self, session: Session) -> None:
         self.sessions.put_item(Item=to_dynamo_item(asdict(session)))
 
+    def get_session_by_refresh_hash(self, refresh_token_hash: str) -> Session | None:
+        response = self.sessions.query(
+            IndexName="refresh-token-index",
+            KeyConditionExpression=Key("refresh_token_hash").eq(refresh_token_hash),
+            Limit=1,
+        )
+        items = response.get("Items", [])
+        return Session(**from_dynamo_item(items[0])) if items else None
+
     def upsert_api_key(self, api_key: ApiKey) -> None:
         self.api_keys.put_item(Item=to_dynamo_item(asdict(api_key)))
 
@@ -173,6 +182,13 @@ class AwsStore:
         )
         items = response.get("Items", [])
         return ApiKey(**from_dynamo_item(items[0])) if items else None
+
+    def api_keys_for_customer(self, customer_id: str) -> list[ApiKey]:
+        response = self.api_keys.query(
+            IndexName="customer-api-keys",
+            KeyConditionExpression=Key("customer_id").eq(customer_id),
+        )
+        return [ApiKey(**from_dynamo_item(item)) for item in response.get("Items", [])]
 
     def get_usage_counter(self, customer_id: str, period: str) -> UsageCounter:
         usage_key = f"{customer_id}#{period}"

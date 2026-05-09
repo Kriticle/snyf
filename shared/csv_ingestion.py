@@ -45,6 +45,7 @@ class CsvIngestionService:
         attribute_list_uri: str | None = None,
         attribute_list_id: str | None = None,
         attribute_schemas: dict[str, list[str]] | None = None,
+        expected_collection_id: str | None = None,
     ) -> None:
         self.store = store
         self.customer_id = customer_id
@@ -52,6 +53,7 @@ class CsvIngestionService:
         self.attribute_list_uri = attribute_list_uri
         self.attribute_list_id = attribute_list_id
         self.attribute_schemas = attribute_schemas or {}
+        self.expected_collection_id = expected_collection_id
         self.attribute_list = self._load_attribute_list()
 
     def ingest_csv(self, csv_text: str, job_id: str = "local-job") -> UploadResult:
@@ -104,6 +106,15 @@ class CsvIngestionService:
             issues.append(CsvIssue(row_number, None, "product_id", "product_id is required."))
         if not collection_id:
             issues.append(CsvIssue(row_number, product_id, "collection_id", "collection_id is required."))
+        elif self.expected_collection_id and collection_id != self.expected_collection_id:
+            issues.append(
+                CsvIssue(
+                    row_number,
+                    product_id,
+                    "collection_id",
+                    f"collection_id must match upload path collection '{self.expected_collection_id}'.",
+                )
+            )
         if not clean(row.get("name")):
             issues.append(CsvIssue(row_number, product_id, "name", "name is required."))
 
@@ -116,6 +127,8 @@ class CsvIngestionService:
                     CsvIssue(row_number, product_id, "image_urls", f"Non-HTTPS URL skipped: {url}", "warning")
                 )
         image_urls = [url for url in image_urls if url.startswith("https://")]
+        if not image_urls:
+            issues.append(CsvIssue(row_number, product_id, "image_urls", "At least one usable HTTPS image URL is required."))
         if len(image_urls) > 5:
             issues.append(CsvIssue(row_number, product_id, "image_urls", "Only first 5 image URLs are used.", "warning"))
             image_urls = image_urls[:5]
@@ -131,6 +144,10 @@ class CsvIngestionService:
 
         assert product_id is not None
         assert collection_id is not None
+        collection_config = self.store.get_collection_config(collection_id)
+        if collection_config is not None and collection_config.customer_id != self.customer_id:
+            issues.append(CsvIssue(row_number, product_id, "collection_id", "Collection not found."))
+            return None, issues
         existing = self.store.get_record(collection_id, product_id)
         if operation == Operation.DELETE and existing is None:
             issues.append(

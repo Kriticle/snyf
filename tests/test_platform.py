@@ -5,13 +5,18 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
+
+from fastapi.testclient import TestClient
 
 from services.enrichment_worker.worker import EnrichmentWorker
 from services.enrichment_worker.worker import parse_enrichment_response
+from services.ingestion_api.main import create_app
+from services.search_api.main import create_app as create_search_app
 from shared.attribute_loader import load_attribute_list
 from shared.auth import AuthError, AuthService
 from shared.csv_ingestion import CsvIngestionService
-from shared.models import SearchRequest
+from shared.models import CollectionConfig, SearchRequest
 from shared.plans import PlanLimitError, UsageService
 from shared.search import SearchService
 from shared.storage import JsonStore
@@ -36,10 +41,10 @@ prod_003,coll_a,Non HTTPS,dresses,http://cdn.example.com/p3.jpg,"[""occasion""]"
             store = JsonStore(tmp)
             result = CsvIngestionService(store, "cust_a").ingest_csv(csv_text)
 
-            self.assertEqual(result.accepted_rows, 2)
-            self.assertEqual(result.rejected_rows, 1)
+            self.assertEqual(result.accepted_rows, 1)
+            self.assertEqual(result.rejected_rows, 2)
             self.assertEqual(result.warnings, 1)
-            self.assertEqual(len(store.drain_queue()), 2)
+            self.assertEqual(len(store.drain_queue()), 1)
 
     def test_signup_rejects_duplicate_email_and_login_creates_session(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -64,6 +69,24 @@ prod_003,coll_a,Non HTTPS,dresses,http://cdn.example.com/p3.jpg,"[""occasion""]"
             customer = auth.authenticate_api_key(signup["api_key"])
 
             self.assertEqual(customer.customer_id, signup["customer"]["customer_id"])
+
+    def test_customer_can_view_and_create_visible_api_keys_after_login(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = JsonStore(tmp)
+            auth = AuthService(store)
+            signup = auth.signup("buyer@brand.com", "password123")
+            login = auth.login("buyer@brand.com", "password123")
+
+            api_keys = auth.list_api_keys(login["refresh_token"])
+
+            self.assertEqual(len(api_keys), 1)
+            self.assertEqual(api_keys[0]["api_key"], signup["api_key"])
+
+            new_key = auth.create_customer_api_key(login["refresh_token"])
+
+            self.assertTrue(new_key["api_key"].startswith("fep_"))
+            self.assertEqual(auth.authenticate_api_key(new_key["api_key"]).customer_id, signup["customer"]["customer_id"])
+            self.assertEqual(len(auth.list_api_keys(login["refresh_token"])), 2)
 
     def test_plan_limits_fail_with_upgrade_message(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -144,6 +167,121 @@ prod_001,coll_a,Linen Trouser,bottoms,https://cdn.example.com/p1.jpg,"Cream line
             self.assertEqual(result.messages[0].attribute_schema, ["material_story", "display_mood"])
             self.assertEqual(result.messages[0].attribute_list_uri, str(attr_file))
 
+    def test_upload_path_collection_id_is_enforced(self) -> None:
+        csv_text = """product_id,collection_id,name,category,image_urls,attributes,description,price
+prod_001,coll_b,Linen Trouser,bottoms,https://cdn.example.com/p1.jpg,"[""occasion""]","Cream linen wide leg holiday trouser",89
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            result = CsvIngestionService(
+                JsonStore(tmp),
+                "cust_a",
+                expected_collection_id="coll_a",
+            ).ingest_csv(csv_text)
+
+            self.assertEqual(result.accepted_rows, 0)
+            self.assertEqual(result.rejected_rows, 1)
+            self.assertIn("must match upload path collection", result.issues[0].message)
+
+    def test_existing_collection_owner_is_preserved(self) -> None:
+        csv_text = """product_id,collection_id,name,category,image_urls,attributes,description,price
+prod_001,coll_a,Linen Trouser,bottoms,https://cdn.example.com/p1.jpg,"[""occasion""]","Cream linen wide leg holiday trouser",89
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            store = JsonStore(tmp)
+            CsvIngestionService(
+                store,
+                "cust_owner",
+                attribute_list_uri=self.write_attribute_file(tmp),
+            ).ingest_csv(csv_text)
+            existing = store.get_collection_config("coll_a")
+
+            self.assertEqual(existing.customer_id, "cust_owner")
+
+    def test_upload_rejects_collection_owned_by_another_customer(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            client = TestClient(create_app(tmp))
+            attr_file = self.write_attribute_file(tmp)
+            csv_text = (
+                "product_id,collection_id,name,category,image_urls,description,price\n"
+                "prod_001,coll_a,Linen Trouser,bottoms,https://cdn.example.com/p1.jpg,Cream linen wide leg holiday trouser,89\n"
+            )
+
+            owner = client.post(
+                "/auth/signup",
+                json={"email": "owner@example.com", "password": "password123"},
+            ).json()
+            other = client.post(
+                "/auth/signup",
+                json={"email": "other@example.com", "password": "password123"},
+            ).json()
+            with patch.dict("os.environ", {"ATTRIBUTE_LIST_BASE_URI": str(Path(attr_file).parent)}):
+                owner_upload = client.post(
+                    "/collections/coll_a/upload",
+                    headers={"x-api-key": owner["api_key"]},
+                    data={"attribute_list_id": "attributes", "process_now": "false"},
+                    files={"csv_file": ("catalog.csv", csv_text, "text/csv")},
+                )
+                other_upload = client.post(
+                    "/collections/coll_a/upload",
+                    headers={"x-api-key": other["api_key"]},
+                    data={"attribute_list_id": "attributes", "process_now": "false"},
+                    files={"csv_file": ("catalog.csv", csv_text, "text/csv")},
+                )
+
+            self.assertEqual(owner_upload.status_code, 200)
+            self.assertEqual(other_upload.status_code, 404)
+
+    def test_upload_accepts_attribute_file_name_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            client = TestClient(create_app(tmp))
+            attr_file = self.write_attribute_file(tmp)
+            csv_text = (
+                "product_id,collection_id,name,category,image_urls,description,price\n"
+                "prod_001,coll_a,Linen Trouser,bottoms,https://cdn.example.com/p1.jpg,Cream linen wide leg holiday trouser,89\n"
+            )
+            signup = client.post(
+                "/auth/signup",
+                json={"email": "happy@example.com", "password": "password123"},
+            ).json()
+
+            with patch.dict("os.environ", {"ATTRIBUTE_LIST_BASE_URI": str(Path(attr_file).parent)}):
+                response = client.post(
+                    "/collections/coll_a/upload",
+                    headers={"x-api-key": signup["api_key"]},
+                    data={"attribute_list_id": "attributes", "process_now": "false"},
+                    files={"csv_file": ("catalog.csv", csv_text, "text/csv")},
+                )
+
+            payload = response.json()
+            collection = JsonStore(tmp).get_collection_config("coll_a")
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(payload["accepted_rows"], 1)
+            self.assertEqual(payload["rejected_rows"], 0)
+            self.assertEqual(collection.attribute_list_id, "attributes")
+            self.assertEqual(collection.attribute_list_uri, attr_file)
+
+    def test_upload_rejects_attribute_list_uri_as_file_name(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            client = TestClient(create_app(tmp))
+            csv_text = (
+                "product_id,collection_id,name,category,image_urls,description,price\n"
+                "prod_001,coll_a,Linen Trouser,bottoms,https://cdn.example.com/p1.jpg,Cream linen wide leg holiday trouser,89\n"
+            )
+            signup = client.post(
+                "/auth/signup",
+                json={"email": "bad-attr@example.com", "password": "password123"},
+            ).json()
+
+            response = client.post(
+                "/collections/coll_a/upload",
+                headers={"x-api-key": signup["api_key"]},
+                data={"attribute_list_id": "s3://bucket/attributes/fashion-v1.json", "process_now": "false"},
+                files={"csv_file": ("catalog.csv", csv_text, "text/csv")},
+            )
+
+            self.assertEqual(response.status_code, 400)
+            self.assertIn("file name", response.json()["detail"])
+
     def test_missing_attribute_taxonomy_rejects_row(self) -> None:
         csv_text = """product_id,collection_id,name,category,image_urls,description,price
 prod_001,coll_a,Linen Trouser,bottoms,https://cdn.example.com/p1.jpg,"Cream linen wide leg holiday trouser",89
@@ -165,6 +303,64 @@ prod_001,coll_a,Linen Trouser,bottoms,https://cdn.example.com/p1.jpg,"Cream line
             parsed,
             {"color": "cream", "fabric_feel": "linen", "occasion": None},
         )
+
+    def test_worker_fails_empty_enriched_attributes_before_indexing(self) -> None:
+        async def empty_enrich(product_id, metadata, image_bytes, attribute_schema):
+            return "{}"
+
+        csv_text = """product_id,collection_id,name,category,image_urls,attributes,description,price
+prod_001,coll_a,Look One,looks,https://cdn.example.com/p1.jpg,"[""style_mood""]","Soft draped outfit",100
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            store = JsonStore(tmp)
+            CsvIngestionService(store, "cust_a").ingest_csv(csv_text)
+            processed = asyncio.run(EnrichmentWorker(store, enrich_fn=empty_enrich).drain_once())
+
+            record = store.get_record("coll_a", "prod_001")
+            self.assertEqual(processed, [])
+            self.assertEqual(record.status.value, "FAILED")
+            self.assertEqual(store.indexed_documents("coll_a"), [])
+
+    def test_worker_fails_empty_embedding_before_indexing(self) -> None:
+        async def valid_enrich(product_id, metadata, image_bytes, attribute_schema):
+            return json.dumps({"style_mood": "soft draped outfit"})
+
+        def empty_embed(text):
+            return []
+
+        csv_text = """product_id,collection_id,name,category,image_urls,attributes,description,price
+prod_001,coll_a,Look One,looks,https://cdn.example.com/p1.jpg,"[""style_mood""]","Soft draped outfit",100
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            store = JsonStore(tmp)
+            CsvIngestionService(store, "cust_a").ingest_csv(csv_text)
+            processed = asyncio.run(EnrichmentWorker(store, enrich_fn=valid_enrich, embed_fn=empty_embed).drain_once())
+
+            record = store.get_record("coll_a", "prod_001")
+            self.assertEqual(processed, [])
+            self.assertEqual(record.status.value, "FAILED")
+            self.assertEqual(store.indexed_documents("coll_a"), [])
+
+    def test_worker_fails_empty_downloaded_image_before_llm(self) -> None:
+        class EmptyImageWorker(EnrichmentWorker):
+            async def _download_images(self, image_urls):
+                return [b""]
+
+        async def should_not_run(product_id, metadata, image_bytes, attribute_schema):
+            raise AssertionError("LLM should not run for empty image bytes.")
+
+        csv_text = """product_id,collection_id,name,category,image_urls,attributes,description,price
+prod_001,coll_a,Look One,looks,https://cdn.example.com/p1.jpg,"[""style_mood""]","Soft draped outfit",100
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            store = JsonStore(tmp)
+            CsvIngestionService(store, "cust_a").ingest_csv(csv_text)
+            processed = asyncio.run(EmptyImageWorker(store, enrich_fn=should_not_run).drain_once())
+
+            record = store.get_record("coll_a", "prod_001")
+            self.assertEqual(processed, [])
+            self.assertEqual(record.status.value, "FAILED")
+            self.assertEqual(store.indexed_documents("coll_a"), [])
 
     def test_delete_message_removes_index_document(self) -> None:
         csv_text = Path("examples/catalog.csv").read_text(encoding="utf-8")
@@ -398,6 +594,29 @@ prod_002,coll_a,Look Two,looks,https://cdn.example.com/p2.jpg,"[""primary_signal
 
             with self.assertRaises(ValueError):
                 SearchService(store).search(SearchRequest(collection_id="coll_ss25", query="anything", top_k=101))
+
+    def test_search_api_rejects_top_k_above_limit_as_client_error(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = JsonStore(tmp)
+            signup = AuthService(store).signup("search@example.com", "password123")
+            store.upsert_collection_config(
+                CollectionConfig(
+                    collection_id="coll_a",
+                    customer_id=signup["customer"]["customer_id"],
+                    attribute_list_id="attributes",
+                    attribute_list_uri=self.write_attribute_file(tmp),
+                )
+            )
+            client = TestClient(create_search_app(tmp))
+
+            response = client.post(
+                "/search",
+                headers={"x-api-key": signup["api_key"]},
+                json={"collection_id": "coll_a", "query": "dress", "top_k": 101},
+            )
+
+            self.assertEqual(response.status_code, 400)
+            self.assertIn("top_k cannot exceed", response.json()["detail"])
 
 
 if __name__ == "__main__":

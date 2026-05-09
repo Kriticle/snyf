@@ -67,9 +67,21 @@ class AuthService:
             customer_id=customer_id,
             api_key_hash=sha256(raw_api_key),
             status="ACTIVE",
+            api_key_value=raw_api_key,
         )
         self.store.upsert_api_key(api_key)
         return api_key, raw_api_key
+
+    def list_api_keys(self, refresh_token: str | None) -> list[dict]:
+        customer = self.authenticate_session(refresh_token)
+        return [public_api_key(api_key) for api_key in self.store.api_keys_for_customer(customer.customer_id)]
+
+    def create_customer_api_key(self, refresh_token: str | None) -> dict:
+        customer = self.authenticate_session(refresh_token)
+        api_key, raw_api_key = self.create_api_key(customer.customer_id)
+        payload = public_api_key(api_key)
+        payload["api_key"] = raw_api_key
+        return payload
 
     def authenticate_api_key(self, raw_api_key: str | None) -> Customer:
         if not raw_api_key:
@@ -82,6 +94,19 @@ class AuthService:
             raise AuthError("Customer is not active.")
         api_key.last_used_at = utc_now()
         self.store.upsert_api_key(api_key)
+        return customer
+
+    def authenticate_session(self, refresh_token: str | None) -> Customer:
+        if not refresh_token:
+            raise AuthError("Missing session token.")
+        session = self.store.get_session_by_refresh_hash(sha256(refresh_token))
+        if session is None or session.status != "ACTIVE":
+            raise AuthError("Invalid session token.")
+        if session.expires_at < int(time.time()):
+            raise AuthError("Session has expired.")
+        customer = self.store.get_customer(session.customer_id)
+        if customer is None or customer.status != "ACTIVE":
+            raise AuthError("Customer is not active.")
         return customer
 
     def _create_session(self, customer_id: str) -> tuple[Session, str]:
@@ -137,3 +162,13 @@ def public_session(session: Session) -> dict:
     data = asdict(session)
     data.pop("refresh_token_hash", None)
     return data
+
+
+def public_api_key(api_key: ApiKey) -> dict:
+    return {
+        "api_key_id": api_key.api_key_id,
+        "api_key": api_key.api_key_value,
+        "status": api_key.status,
+        "created_at": api_key.created_at,
+        "last_used_at": api_key.last_used_at,
+    }

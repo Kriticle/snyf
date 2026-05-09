@@ -40,6 +40,8 @@ def infer_value(text: str, attr: str) -> str | None:
     for word in attr_words:
         if word in tokens:
             return extract_evidence(tokens, word)
+    if tokens:
+        return " ".join(tokens[: min(len(tokens), 8)])
     return None
 
 
@@ -55,4 +57,3 @@ def extract_evidence(tokens: list[str], word: str, window: int = 4) -> str:
     start = max(0, index - window)
     end = min(len(tokens), index + window + 1)
     return " ".join(tokens[start:end])
-
