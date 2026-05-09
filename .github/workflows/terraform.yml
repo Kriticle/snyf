@@ -21,10 +21,13 @@ env:
   TF_IN_AUTOMATION: "true"
   TF_INPUT: "false"
   AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+  AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
 
 jobs:
   plan:
     runs-on: ubuntu-latest
+    outputs:
+      plan_created: ${{ steps.aws.outputs.enabled }}
     defaults:
       run:
         working-directory: infra/terraform
@@ -35,22 +38,48 @@ jobs:
         with:
           terraform_version: "1.15.0"
 
+      - name: Check AWS credentials
+        id: aws
+        run: |
+          if [ -n "$AWS_ROLE_ARN" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Terraform init for validation
+        if: steps.aws.outputs.enabled != 'true'
+        run: terraform init -backend=false
+
+      - name: Terraform validate
+        if: steps.aws.outputs.enabled != 'true'
+        run: terraform validate
+
+      - name: Skip Terraform plan
+        if: steps.aws.outputs.enabled != 'true'
+        run: echo "AWS_ROLE_ARN is not configured; validated Terraform only and skipped plan/apply."
+
       - name: Configure AWS credentials
+        if: steps.aws.outputs.enabled == 'true'
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Terraform init
+        if: steps.aws.outputs.enabled == 'true'
         run: terraform init
 
       - name: Terraform validate
+        if: steps.aws.outputs.enabled == 'true'
         run: terraform validate
 
       - name: Terraform plan
+        if: steps.aws.outputs.enabled == 'true'
         run: terraform plan -out=tfplan
 
       - name: Upload plan
+        if: steps.aws.outputs.enabled == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: terraform-plan
@@ -58,7 +87,7 @@ jobs:
           retention-days: 5
 
   apply:
-    if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/mainline') && github.event_name != 'pull_request'
+    if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/mainline') && github.event_name != 'pull_request' && needs.plan.outputs.plan_created == 'true'
     needs: plan
     runs-on: ubuntu-latest
     environment: production
@@ -75,7 +104,7 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Terraform init
