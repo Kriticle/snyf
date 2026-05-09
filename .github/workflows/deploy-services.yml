@@ -2,7 +2,7 @@ name: deploy-services
 
 on:
   push:
-    branches: [main]
+    branches: [main, mainline]
     paths:
       - "services/**"
       - "shared/**"

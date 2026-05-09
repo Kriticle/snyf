@@ -3,7 +3,7 @@ name: ci
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, mainline]
 
 jobs:
   python-tests:
@@ -34,4 +34,3 @@ jobs:
 
       - name: Check Terraform formatting
         run: terraform -chdir=infra/terraform fmt -check -recursive
-

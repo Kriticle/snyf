@@ -6,7 +6,7 @@ on:
       - "infra/terraform/**"
       - ".github/workflows/terraform.yml"
   push:
-    branches: [main]
+    branches: [main, mainline]
     paths:
       - "infra/terraform/**"
       - ".github/workflows/terraform.yml"
@@ -58,7 +58,7 @@ jobs:
           retention-days: 5
 
   apply:
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/mainline') && github.event_name != 'pull_request'
     needs: plan
     runs-on: ubuntu-latest
     environment: production
@@ -89,4 +89,3 @@ jobs:
 
       - name: Terraform apply
         run: terraform apply -auto-approve tfplan
-
