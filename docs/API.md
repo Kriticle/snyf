@@ -235,7 +235,7 @@ Response:
 
 ```json
 {
-  "job_id": "job_coll_ss25",
+  "job_id": "job_coll_ss25_a1b2c3d4e5f6",
   "accepted_rows": 3,
   "rejected_rows": 0,
   "warnings": 0,
@@ -270,6 +270,53 @@ Notes:
 - The worker downloads those URLs during enrichment.
 - `image_urls` are stored on the product record and denormalized into the OpenSearch document so search can render product cards without a second lookup.
 - The upload path owns the collection. CSV `collection_id` is optional; when present it must match the path.
+
+## Ingestion Job Status
+
+Polls an upload job until products are enriched and searchable.
+
+```http
+GET /ingestion-jobs/{job_id}
+x-api-key: fep_...
+```
+
+Response:
+
+```json
+{
+  "job_id": "job_coll_ss25_a1b2c3d4e5f6",
+  "status": "READY",
+  "accepted_rows": 3,
+  "queued_rows": 0,
+  "processing_rows": 0,
+  "enriched_rows": 3,
+  "failed_rows": 0,
+  "deleted_rows": 0,
+  "products": [
+    {
+      "collection_id": "coll_ss25",
+      "product_id": "prod_001",
+      "name": "Linen Wide-Leg Trouser",
+      "status": "ENRICHED",
+      "updated_at": "2026-05-10T00:00:00+00:00"
+    }
+  ]
+}
+```
+
+Statuses:
+
+- `QUEUED`: accepted but not picked up by the worker yet.
+- `PROCESSING`: at least one product is being enriched or some products have completed.
+- `READY`: every accepted product was enriched or deleted successfully.
+- `COMPLETED_WITH_ERRORS`: processing ended, but one or more products failed enrichment.
+
+Failed rows:
+
+```http
+GET /ingestion-jobs/{job_id}/errors
+x-api-key: fep_...
+```
 
 ## Search
 

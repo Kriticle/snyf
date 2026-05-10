@@ -5,6 +5,7 @@ import asyncio
 import csv
 import json
 import os
+import uuid
 from dataclasses import asdict
 from io import StringIO
 from pathlib import Path
@@ -13,6 +14,7 @@ from services.enrichment_worker.worker import EnrichmentWorker
 from shared.attribute_loader import load_attribute_list
 from shared.auth import AuthError, AuthService
 from shared.csv_ingestion import CsvIngestionService
+from shared.models import ProductRecord, ProductStatus
 from shared.plans import PlanLimitError, UsageService
 from shared.store_factory import create_store
 
@@ -72,6 +74,27 @@ def create_app(data_dir: str = "data"):
         except AuthError as exc:
             raise HTTPException(status_code=401, detail=str(exc)) from exc
 
+    @app.get("/ingestion-jobs/{job_id}")
+    def get_ingestion_job(job_id: str, x_api_key: str | None = Header(default=None)):
+        customer = authenticate_request(auth_service, x_api_key)
+        records = records_for_owned_job(store, job_id, customer.customer_id)
+        if not records:
+            raise HTTPException(status_code=404, detail="Ingestion job not found.")
+        return build_job_status(job_id, records)
+
+    @app.get("/ingestion-jobs/{job_id}/errors")
+    def get_ingestion_job_errors(job_id: str, x_api_key: str | None = Header(default=None)):
+        customer = authenticate_request(auth_service, x_api_key)
+        records = records_for_owned_job(store, job_id, customer.customer_id)
+        if not records:
+            raise HTTPException(status_code=404, detail="Ingestion job not found.")
+        failed = [record for record in records if record.status == ProductStatus.FAILED]
+        return {
+            "job_id": job_id,
+            "failed_rows": len(failed),
+            "errors": [job_error_payload(record) for record in failed],
+        }
+
     @app.post("/collections/{collection_id}/upload")
     async def upload_collection(
         collection_id: str,
@@ -100,7 +123,7 @@ def create_app(data_dir: str = "data"):
             attribute_list_id=attribute_list_id,
             expected_collection_id=collection_id,
         )
-        result = service.ingest_csv(csv_text, job_id=f"job_{collection_id}")
+        result = service.ingest_csv(csv_text, job_id=f"job_{collection_id}_{uuid.uuid4().hex[:12]}")
         if process_now:
             await EnrichmentWorker(store).drain_once()
         return serialize(result)
@@ -117,6 +140,63 @@ def serialize(value):
     else:
         payload = value
     return json.loads(json.dumps(payload, default=str))
+
+
+def records_for_owned_job(store, job_id: str, customer_id: str) -> list[ProductRecord]:
+    return [
+        record
+        for record in store.records_for_job(job_id)
+        if record.customer_id == customer_id
+    ]
+
+
+def build_job_status(job_id: str, records: list[ProductRecord]) -> dict:
+    counts = {status.value: 0 for status in ProductStatus}
+    for record in records:
+        counts[record.status.value] = counts.get(record.status.value, 0) + 1
+
+    accepted_rows = len(records)
+    failed_rows = counts[ProductStatus.FAILED.value]
+    terminal_rows = (
+        counts[ProductStatus.ENRICHED.value]
+        + failed_rows
+        + counts[ProductStatus.DELETED.value]
+    )
+    if accepted_rows and terminal_rows == accepted_rows:
+        status = "COMPLETED_WITH_ERRORS" if failed_rows else "READY"
+    elif counts[ProductStatus.ENRICHING.value] or counts[ProductStatus.ENRICHED.value] or failed_rows:
+        status = "PROCESSING"
+    else:
+        status = "QUEUED"
+
+    return {
+        "job_id": job_id,
+        "status": status,
+        "accepted_rows": accepted_rows,
+        "queued_rows": counts[ProductStatus.QUEUED.value],
+        "processing_rows": counts[ProductStatus.ENRICHING.value],
+        "enriched_rows": counts[ProductStatus.ENRICHED.value],
+        "failed_rows": failed_rows,
+        "deleted_rows": counts[ProductStatus.DELETED.value],
+        "products": [job_product_payload(record) for record in records],
+    }
+
+
+def job_product_payload(record: ProductRecord) -> dict:
+    return {
+        "collection_id": record.collection_id,
+        "product_id": record.product_id,
+        "name": record.raw_metadata.get("name"),
+        "status": record.status.value,
+        "updated_at": record.updated_at,
+    }
+
+
+def job_error_payload(record: ProductRecord) -> dict:
+    return {
+        **job_product_payload(record),
+        "message": "Enrichment failed. Check worker logs for the underlying provider or validation error.",
+    }
 
 
 def main() -> None:

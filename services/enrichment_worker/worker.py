@@ -47,6 +47,7 @@ class EnrichmentWorker:
             raw_metadata=message.metadata,
             image_urls=message.image_urls,
             attribute_schema=message.attribute_schema,
+            attribute_list_uri=message.attribute_list_uri,
             category=message.metadata.get("category"),
             price=message.metadata.get("price"),
             currency=message.metadata.get("currency"),

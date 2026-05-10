@@ -89,6 +89,13 @@ class JsonStore:
             if record.collection_id == collection_id and record.status != ProductStatus.DELETED:
                 yield record
 
+    def records_for_job(self, job_id: str) -> list[ProductRecord]:
+        return [
+            record
+            for record in self._records().values()
+            if record.raw_metadata.get("job_id") == job_id
+        ]
+
     def indexed_documents(self, collection_id: str) -> list[dict]:
         return [
             document

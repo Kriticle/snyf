@@ -116,6 +116,13 @@ class AwsStore:
             if record.status != ProductStatus.DELETED:
                 yield record
 
+    def records_for_job(self, job_id: str) -> list[ProductRecord]:
+        response = self.products.query(
+            IndexName="job-products",
+            KeyConditionExpression=Key("job_id").eq(job_id),
+        )
+        return [self._record_from_dict(item) for item in response.get("Items", [])]
+
     def indexed_documents(self, collection_id: str) -> list[dict[str, Any]]:
         if self.search and self.search_index:
             response = self.search.search(

@@ -289,13 +289,53 @@ Example response:
 
 ```json
 {
-  "job_id": "job_coll_ss25",
+  "job_id": "job_coll_ss25_a1b2c3d4e5f6",
   "accepted_rows": 3,
   "rejected_rows": 0,
   "warnings": 0,
   "status": "QUEUED",
   "issues": []
 }
+```
+
+### Check Upload Status
+
+Use the `job_id` from the upload response to see when the catalog is searchable:
+
+```bash
+curl -s "$INGESTION_URL/ingestion-jobs/$JOB_ID" \
+  -H "x-api-key: $API_KEY"
+```
+
+Example response:
+
+```json
+{
+  "job_id": "job_coll_ss25_a1b2c3d4e5f6",
+  "status": "READY",
+  "accepted_rows": 3,
+  "queued_rows": 0,
+  "processing_rows": 0,
+  "enriched_rows": 3,
+  "failed_rows": 0,
+  "deleted_rows": 0,
+  "products": [
+    {
+      "collection_id": "coll_ss25",
+      "product_id": "prod_001",
+      "name": "Linen Wide-Leg Trouser",
+      "status": "ENRICHED",
+      "updated_at": "2026-05-10T00:00:00+00:00"
+    }
+  ]
+}
+```
+
+Failed rows:
+
+```bash
+curl -s "$INGESTION_URL/ingestion-jobs/$JOB_ID/errors" \
+  -H "x-api-key: $API_KEY"
 ```
 
 Missing or invalid API key:

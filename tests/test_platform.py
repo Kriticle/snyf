@@ -198,6 +198,49 @@ prod_001,Linen Trouser,bottoms,https://cdn.example.com/p1.jpg,Cream linen wide l
             self.assertEqual(result.rejected_rows, 0)
             self.assertEqual(result.messages[0].collection_id, "coll_a")
 
+    def test_upload_returns_pollable_job_status_for_owner_only(self) -> None:
+        csv_text = """product_id,name,category,image_urls,description,price
+prod_001,Linen Trouser,bottoms,https://cdn.example.com/p1.jpg,Cream linen wide leg holiday trouser,89
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            client = TestClient(create_app(tmp))
+            attr_file = self.write_attribute_file(tmp)
+            owner = client.post(
+                "/auth/signup",
+                json={"email": "job-owner@example.com", "password": "password123"},
+            ).json()
+            other = client.post(
+                "/auth/signup",
+                json={"email": "job-other@example.com", "password": "password123"},
+            ).json()
+
+            with patch.dict("os.environ", {"ATTRIBUTE_LIST_BASE_URI": str(Path(attr_file).parent)}):
+                upload = client.post(
+                    "/collections/coll_a/upload",
+                    headers={"x-api-key": owner["api_key"]},
+                    data={"attribute_list_id": "attributes", "process_now": "false"},
+                    files={"csv_file": ("catalog.csv", csv_text, "text/csv")},
+                )
+
+            payload = upload.json()
+            owner_status = client.get(
+                f"/ingestion-jobs/{payload['job_id']}",
+                headers={"x-api-key": owner["api_key"]},
+            )
+            other_status = client.get(
+                f"/ingestion-jobs/{payload['job_id']}",
+                headers={"x-api-key": other["api_key"]},
+            )
+
+            self.assertEqual(upload.status_code, 200)
+            self.assertEqual(payload["accepted_rows"], 1)
+            self.assertTrue(payload["job_id"].startswith("job_coll_a_"))
+            self.assertEqual(owner_status.status_code, 200)
+            self.assertEqual(owner_status.json()["status"], "QUEUED")
+            self.assertEqual(owner_status.json()["queued_rows"], 1)
+            self.assertEqual(owner_status.json()["products"][0]["collection_id"], "coll_a")
+            self.assertEqual(other_status.status_code, 404)
+
     def test_existing_collection_owner_is_preserved(self) -> None:
         csv_text = """product_id,collection_id,name,category,image_urls,attributes,description,price
 prod_001,coll_a,Linen Trouser,bottoms,https://cdn.example.com/p1.jpg,"[""occasion""]","Cream linen wide leg holiday trouser",89

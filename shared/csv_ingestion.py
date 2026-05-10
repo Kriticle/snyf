@@ -8,7 +8,7 @@ from typing import Any
 
 from shared.attribute_loader import AttributeList, load_attribute_list
 from shared.models import CollectionConfig
-from shared.models import CsvIssue, IngestionMessage, Operation
+from shared.models import CsvIssue, IngestionMessage, Operation, ProductRecord, ProductStatus
 from shared.storage import JsonStore
 
 
@@ -87,7 +87,9 @@ class CsvIngestionService:
                 )
                 continue
             seen.add(dedupe_key)
+            message.metadata["job_id"] = job_id
             self.store.enqueue(message)
+            self._upsert_queued_record(message)
             result.messages.append(message)
             self._upsert_collection_config(message.collection_id)
             result.accepted_rows += 1
@@ -238,6 +240,28 @@ class CsvIngestionService:
                 customer_id=self.customer_id,
                 attribute_list_id=attribute_list_id,
                 attribute_list_uri=self.attribute_list_uri,
+            )
+        )
+
+    def _upsert_queued_record(self, message: IngestionMessage) -> None:
+        if message.operation == Operation.DELETE:
+            return
+        existing = self.store.get_record(message.collection_id, message.product_id)
+        self.store.upsert_record(
+            ProductRecord(
+                customer_id=message.customer_id,
+                collection_id=message.collection_id,
+                product_id=message.product_id,
+                raw_metadata=dict(message.metadata),
+                image_urls=message.image_urls,
+                attribute_schema=message.attribute_schema,
+                attribute_list_uri=message.attribute_list_uri,
+                category=message.metadata.get("category"),
+                price=message.metadata.get("price"),
+                currency=message.metadata.get("currency"),
+                brand=message.metadata.get("brand"),
+                status=ProductStatus.QUEUED,
+                version=existing.version if existing else 0,
             )
         )
 
