@@ -23,23 +23,12 @@ def build_enrichment_prompt(metadata: dict[str, Any], attribute_schema: list[str
 def build_query_parser_prompt(query: str, available_attributes: list[str]) -> str:
     return "\n".join(
         [
-            "Extract searchable intent from a product search query.",
-            "Return JSON only with this shape:",
-            '{"attributes": {...}, "hard_filters": {...}}',
-            "",
-            "Rules:",
-            "- Attribute keys must come only from the provided customer attribute list.",
-            "- Include an attribute only when the query clearly expresses it.",
-            "- hard_filters may include only category, price_min, or price_max.",
-            "- Do not infer category unless the query explicitly asks for a category.",
-            "- Do not infer price unless the query explicitly contains a price constraint.",
-            "- Do not return weights. Weights are configured in the attribute list.",
-            "",
-            "Customer attribute list:",
-            json.dumps(available_attributes, indent=2, sort_keys=True),
-            "",
-            "Query:",
-            query,
+            "Extract product-search intent. Return JSON only:",
+            '{"attributes":{},"hard_filters":{}}',
+            "Attribute keys must be from attrs. Include only clearly expressed attributes.",
+            "hard_filters may only be category, price_min, price_max. Use them only when explicit.",
+            "Never return weights.",
+            f"attrs={json.dumps(available_attributes, separators=(',', ':'), sort_keys=True)}",
+            f"query={query}",
         ]
     )
-

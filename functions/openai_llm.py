@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+from functools import lru_cache
 from typing import Any
 
 from functions.prompts import build_enrichment_prompt, build_query_parser_prompt
@@ -56,11 +57,17 @@ class OpenAILLM:
         return validate_json_object(response.output_text)
 
     def extract_query_attributes(self, query: str, available_attributes: list[str]) -> str:
+        return self._extract_query_attributes_cached(query.strip().lower(), tuple(sorted(available_attributes)))
+
+    @lru_cache(maxsize=1024)
+    def _extract_query_attributes_cached(self, normalized_query: str, available_attributes: tuple[str, ...]) -> str:
+        query = normalized_query
         prompt = build_query_parser_prompt(query, available_attributes)
         response = self.client.responses.create(
             model=self.query_model,
             input=[{"role": "user", "content": [{"type": "input_text", "text": prompt}]}],
             text={"format": {"type": "json_object"}},
+            max_output_tokens=300,
         )
         return validate_json_object(response.output_text)
 
