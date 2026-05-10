@@ -130,9 +130,9 @@ curl -sS "$API_URL/auth/api-keys" \
   -H "authorization: Bearer $REFRESH_TOKEN" | jq
 
 cat > /tmp/fashion_catalog.csv <<EOF
-product_id,collection_id,name,image_urls,category,description,price,currency,brand
-prod_001,$COLLECTION_ID,Flowy Resort Dress,https://images.unsplash.com/photo-1515372039744-b8f02a3ae446?w=800,dresses,"Flowy ivory linen midi dress for beach vacation dinners",128,USD,TestBrand
-prod_002,$COLLECTION_ID,Structured Office Blazer,https://images.unsplash.com/photo-1591369822096-ffd140ec948f?w=800,jacket,"Tailored navy blazer with structured office energy",188,USD,TestBrand
+product_id,name,image_urls,category,description,price,currency,brand
+prod_001,Flowy Resort Dress,https://images.unsplash.com/photo-1515372039744-b8f02a3ae446?w=800,dresses,"Flowy ivory linen midi dress for beach vacation dinners",128,USD,TestBrand
+prod_002,Structured Office Blazer,https://images.unsplash.com/photo-1591369822096-ffd140ec948f?w=800,jacket,"Tailored navy blazer with structured office energy",188,USD,TestBrand
 EOF
 
 curl -sS -X POST "$API_URL/collections/$COLLECTION_ID/upload" \

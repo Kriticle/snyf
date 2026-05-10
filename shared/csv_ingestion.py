@@ -12,7 +12,8 @@ from shared.models import CsvIssue, IngestionMessage, Operation
 from shared.storage import JsonStore
 
 
-REQUIRED_COLUMNS = {"product_id", "collection_id", "name", "image_urls"}
+BASE_REQUIRED_COLUMNS = {"product_id", "name", "image_urls"}
+REQUIRED_COLUMNS = BASE_REQUIRED_COLUMNS | {"collection_id"}
 OPTIONAL_COLUMNS = {
     "category",
     "description",
@@ -60,7 +61,8 @@ class CsvIngestionService:
         result = UploadResult(job_id=job_id)
         reader = csv.DictReader(StringIO(csv_text))
         headers = set(reader.fieldnames or [])
-        missing_headers = REQUIRED_COLUMNS - headers
+        required_columns = BASE_REQUIRED_COLUMNS if self.expected_collection_id else REQUIRED_COLUMNS
+        missing_headers = required_columns - headers
         if missing_headers:
             for column in sorted(missing_headers):
                 result.issues.append(CsvIssue(0, None, column, "Missing required column header."))
@@ -101,12 +103,13 @@ class CsvIngestionService:
     ) -> tuple[IngestionMessage | None, list[CsvIssue]]:
         issues: list[CsvIssue] = []
         product_id = clean(row.get("product_id"))
-        collection_id = clean(row.get("collection_id"))
+        row_collection_id = clean(row.get("collection_id"))
+        collection_id = row_collection_id or self.expected_collection_id
         if not product_id:
             issues.append(CsvIssue(row_number, None, "product_id", "product_id is required."))
         if not collection_id:
             issues.append(CsvIssue(row_number, product_id, "collection_id", "collection_id is required."))
-        elif self.expected_collection_id and collection_id != self.expected_collection_id:
+        elif self.expected_collection_id and row_collection_id and row_collection_id != self.expected_collection_id:
             issues.append(
                 CsvIssue(
                     row_number,

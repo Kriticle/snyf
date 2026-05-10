@@ -1,0 +1,5 @@
+product_id,name,image_urls,category,description,price,currency,brand
+resort_dress,Flowy Resort Dress,https://images.unsplash.com/photo-1529139574466-a303027c1d8b?w=800,dress,"Airy flowy ivory beach wedding guest dress with relaxed vacation elegance",128,USD,Snyf Test
+linen_blazer,Structured Linen Blazer,https://images.unsplash.com/photo-1591047139829-d91aecb6caea?w=800,blazer,"Tailored structured blazer energy for polished city styling",188,USD,Snyf Test
+linen_trousers,Linen Wide Leg Trousers,https://images.unsplash.com/photo-1594633312681-425c7b97ccd1?w=800,bottoms,"Relaxed cream linen wide leg trousers for resort dinners and effortless vacation outfits",98,USD,Snyf Test
+printed_midi,Printed Midi Dress,https://images.unsplash.com/photo-1496747611176-843222e1e57c?w=800,dress,"Bright printed midi dress with playful color and prints that pop for summer parties",142,USD,Snyf Test

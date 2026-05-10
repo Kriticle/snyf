@@ -182,6 +182,22 @@ prod_001,coll_b,Linen Trouser,bottoms,https://cdn.example.com/p1.jpg,"[""occasio
             self.assertEqual(result.rejected_rows, 1)
             self.assertIn("must match upload path collection", result.issues[0].message)
 
+    def test_path_scoped_upload_accepts_csv_without_collection_id(self) -> None:
+        csv_text = """product_id,name,category,image_urls,description,price
+prod_001,Linen Trouser,bottoms,https://cdn.example.com/p1.jpg,Cream linen wide leg holiday trouser,89
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            result = CsvIngestionService(
+                JsonStore(tmp),
+                "cust_a",
+                attribute_list_uri=self.write_attribute_file(tmp),
+                expected_collection_id="coll_a",
+            ).ingest_csv(csv_text)
+
+            self.assertEqual(result.accepted_rows, 1)
+            self.assertEqual(result.rejected_rows, 0)
+            self.assertEqual(result.messages[0].collection_id, "coll_a")
+
     def test_existing_collection_owner_is_preserved(self) -> None:
         csv_text = """product_id,collection_id,name,category,image_urls,attributes,description,price
 prod_001,coll_a,Linen Trouser,bottoms,https://cdn.example.com/p1.jpg,"[""occasion""]","Cream linen wide leg holiday trouser",89

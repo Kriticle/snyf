@@ -197,14 +197,16 @@ Form fields:
 Required CSV columns:
 
 ```text
-product_id,collection_id,name,image_urls
+product_id,name,image_urls
 ```
 
 Optional CSV columns:
 
 ```text
-category,description,price,currency,brand,attributes,_deleted
+collection_id,category,description,price,currency,brand,attributes,_deleted
 ```
+
+The upload path collection is the source of truth. If a CSV includes `collection_id`, it must match `/collections/{collection_id}/upload`; otherwise the backend fills it from the path.
 
 Attribute-list example:
 
@@ -267,7 +269,7 @@ Notes:
 - Product images are not copied into our S3 bucket. The CSV supplies public image URLs.
 - The worker downloads those URLs during enrichment.
 - `image_urls` are stored on the product record and denormalized into the OpenSearch document so search can render product cards without a second lookup.
-- Current implementation accepts the CSV row's `collection_id`; we should tighten validation so it must match the path `collection_id`.
+- The upload path owns the collection. CSV `collection_id` is optional; when present it must match the path.
 
 ## Search
 
