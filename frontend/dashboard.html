@@ -155,8 +155,11 @@
                             </h2>
                             <p class="text-gray-400 text-sm mt-1">Send a catalog file to ingestion. The worker enriches each row with the collection attribute list.</p>
                             <div class="mt-5 space-y-3">
+                                <a href="assets/catalog-template.csv" download class="inline-flex items-center text-sm font-semibold text-primary hover:text-secondary">
+                                    <i class="fas fa-download mr-2"></i>Download CSV template
+                                </a>
                                 <input type="file" id="csv-file-input" accept=".csv,text/csv" class="block w-full text-sm text-gray-300 file:mr-4 file:rounded-md file:border-0 file:bg-primary file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-primary/90">
-                                <input type="text" id="attribute-list-id-input" class="w-full px-4 py-3 rounded-lg bg-gray-900 border border-gray-700 text-white focus:ring-primary focus:border-primary placeholder-gray-500 focus:outline-none" placeholder="attribute file name">
+                                <select id="attribute-list-id-input" class="w-full px-4 py-3 rounded-lg bg-gray-900 border border-gray-700 text-white focus:ring-primary focus:border-primary placeholder-gray-500 focus:outline-none"></select>
                                 <button type="submit" id="upload-submit-btn" class="w-full bg-secondary text-white font-semibold px-5 py-3 rounded-lg hover:bg-secondary/90 transition">
                                     Upload Catalog
                                 </button>
@@ -178,6 +181,12 @@
         // --- CONFIGURATION ---
         const SNYF_API_URL = 'https://xydj4rm9eg.execute-api.us-east-1.amazonaws.com';
         const DEFAULT_ATTRIBUTE_LIST_ID = 'smoke-fashion-v1';
+        const ATTRIBUTE_LISTS = [
+            { id: 'smoke-fashion-v1', label: 'Fashion starter', required: true },
+            { id: 'fashion-v1', label: 'Fashion expanded', required: true },
+            { id: 'beauty-v1', label: 'Beauty starter', required: false },
+            { id: 'home-v1', label: 'Home goods starter', required: false }
+        ];
 
         // --- GLOBAL STATE ---
         let g_session = JSON.parse(localStorage.getItem('snyfSession') || 'null');
@@ -280,6 +289,18 @@
             if (type === 'success') uploadStatus.classList.add('text-green-400');
             else if (type === 'error') uploadStatus.classList.add('text-red-400');
             else uploadStatus.classList.add('text-blue-400');
+        };
+
+        const populateAttributeLists = () => {
+            const savedAttributeListId = localStorage.getItem('snyfAttributeListId') || DEFAULT_ATTRIBUTE_LIST_ID;
+            attributeListIdInput.innerHTML = ATTRIBUTE_LISTS.map((item) => {
+                const requiredText = item.required ? 'required' : 'optional';
+                return `<option value="${item.id}">${item.label} - ${item.id} (${requiredText})</option>`;
+            }).join('');
+            attributeListIdInput.value = savedAttributeListId;
+            if (!attributeListIdInput.value) {
+                attributeListIdInput.value = DEFAULT_ATTRIBUTE_LIST_ID;
+            }
         };
 
         const loadApiKeys = async () => {
@@ -416,7 +437,7 @@
 
             welcomeHeader.textContent = `Welcome Back, ${displayName}!`;
             collectionInput.value = defaultCollection;
-            attributeListIdInput.value = localStorage.getItem('snyfAttributeListId') || DEFAULT_ATTRIBUTE_LIST_ID;
+            populateAttributeLists();
 
             if (!g_collectionId) {
                 g_collectionId = defaultCollection;

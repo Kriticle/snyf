@@ -132,7 +132,7 @@
                 paginationControls.innerHTML = '';
                 try {
                     if (currentSearchMode !== 'snyf') {
-                        resultsContainer.innerHTML = `<p class="col-span-full text-center text-yellow-500">Keyword search is not available in the current backend.</p>`;
+                        resultsContainer.innerHTML = `<p class="col-span-full text-center text-yellow-500">Regular search is a plain keyword baseline. It is not backed by a separate production endpoint yet, so use Snyf AI Search for live API results.</p>`;
                         return;
                     }
                     if (!API_KEY || !COLLECTION_ID) throw new Error('Sign up and save an API key plus collection in the dashboard first.');

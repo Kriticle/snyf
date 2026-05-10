@@ -36,7 +36,7 @@
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div class="grid grid-cols-12 gap-x-8">
             
-            <nav class="col-span-12 py-6 flex justify-between items-center sticky top-0 bg-dark/80 backdrop-blur-lg z-50">
+            <nav class="snyf-topbar col-span-12 py-6 flex justify-between items-center sticky top-0 bg-dark/80 backdrop-blur-lg z-50">
                 <a href="index.html" class="flex items-center"><i class="fas fa-braille text-primary text-2xl mr-2"></i><span class="text-xl font-bold text-white">Snyf</span></a>
                 <div class="hidden md:flex items-center space-x-8">
                     <a href="#demo" class="text-gray-300 hover:text-white transition-colors">Live Demo</a>
@@ -87,7 +87,7 @@
                         <div>
                             <p class="snyf-kicker mb-3"><i class="fas fa-wave-square"></i> Live comparison</p>
                             <h2 class="text-3xl font-bold text-white">Natural language in. Ranked products out.</h2>
-                            <p class="text-gray-400 mt-2">Compare semantic product understanding with traditional keyword search.</p>
+                            <p class="text-gray-400 mt-2">Search the uploaded demo collection through the same API your dashboard uses.</p>
                         </div>
                         <div class="inline-flex rounded-lg bg-gray-900 p-1 mt-6 space-x-1">
                             <button id="snyf-search-btn" class="px-6 py-2 text-sm font-semibold rounded-md transition-all duration-200"></button>
@@ -99,6 +99,11 @@
                         <div class="flex">
                             <input type="text" id="search-input" class="w-full px-5 py-3 text-gray-300 bg-dark-accent border border-r-0 border-gray-600 rounded-l-lg focus:outline-none focus:ring-2 focus:ring-secondary placeholder-gray-500" placeholder="Describe a clothing item..." required>
                             <button type="submit" class="bg-primary text-white font-semibold px-6 py-3 rounded-r-lg hover:bg-primary/90 transition-colors">Search</button>
+                        </div>
+                        <div class="mt-3 flex flex-wrap items-center justify-center gap-3 text-sm">
+                            <button type="button" class="sample-query-btn text-primary font-semibold" data-query="flowy beach wedding look">flowy beach wedding look</button>
+                            <button type="button" class="sample-query-btn text-primary font-semibold" data-query="structured blazer energy">structured blazer energy</button>
+                            <a href="assets/sample-catalog.csv" download class="text-gray-400 hover:text-primary font-semibold">Download sample CSV</a>
                         </div>
                     </form>
                     
@@ -291,8 +296,8 @@
             const demoContainer = document.getElementById('demo');
             if(demoContainer) {
                 const SNYF_API_URL = 'https://xydj4rm9eg.execute-api.us-east-1.amazonaws.com';
-                const SNYF_API_KEY = localStorage.getItem('snyfApiKey');
-                const SNYF_COLLECTION_ID = localStorage.getItem('snyfCollectionId');
+                const SNYF_API_KEY = localStorage.getItem('snyfDemoApiKey') || localStorage.getItem('snyfApiKey');
+                const SNYF_COLLECTION_ID = localStorage.getItem('snyfDemoCollectionId') || localStorage.getItem('snyfCollectionId');
                 
                 const snyfBtn = document.getElementById('snyf-search-btn'), 
                       normalBtn = document.getElementById('normal-search-btn'),
@@ -368,7 +373,7 @@
                     } else { 
                         // --- UPDATED KEYWORD SEARCH LOGIC (GET REQUEST) ---
                         try { 
-                            resultsContainer.innerHTML = `<div class="col-span-full text-center py-10"><p class="text-yellow-500">Keyword search is not available in the current backend. Use Snyf AI Search for your collection.</p></div>`;
+                            resultsContainer.innerHTML = `<div class="col-span-full text-center py-10"><p class="text-yellow-500">Regular search is a plain keyword baseline. It is not backed by a separate production endpoint yet, so use Snyf AI Search for live API results.</p></div>`;
                             
                         } catch (error) { 
                             console.error(error);
@@ -389,6 +394,12 @@
                 snyfBtn.addEventListener('click', () => { if (currentSearchMode === 'snyf') return; currentSearchMode = 'snyf'; updateToggleUI(); const query = searchInput.value.trim(); if (query) performSearch(query); });
                 normalBtn.addEventListener('click', () => { if (currentSearchMode === 'normal') return; currentSearchMode = 'normal'; updateToggleUI(); const query = searchInput.value.trim(); if (query) performSearch(query); });
                 searchForm.addEventListener('submit', (e) => { e.preventDefault(); const query = searchInput.value.trim(); if (query) performSearch(query); });
+                document.querySelectorAll('.sample-query-btn').forEach((button) => {
+                    button.addEventListener('click', () => {
+                        searchInput.value = button.dataset.query || '';
+                        performSearch(searchInput.value);
+                    });
+                });
                 
                 updateToggleUI();
                 fetchInitialCatalog();

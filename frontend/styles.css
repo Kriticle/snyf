@@ -68,6 +68,10 @@ body {
     background-color: rgba(22, 163, 74, 0.12) !important;
 }
 
+.bg-blue-900 {
+    background-color: rgba(124, 58, 237, 0.12) !important;
+}
+
 .border-gray-800,
 .border-gray-700,
 .border-gray-600 {
@@ -190,6 +194,13 @@ nav {
     background: rgba(255, 250, 244, 0.82) !important;
     border-color: var(--line) !important;
     box-shadow: 0 1px 0 rgba(83, 54, 117, 0.06), 0 18px 60px rgba(76, 29, 149, 0.08);
+}
+
+.snyf-topbar {
+    margin-left: calc(50% - 50vw);
+    margin-right: calc(50% - 50vw);
+    padding-left: max(1rem, calc((100vw - 80rem) / 2 + 1rem));
+    padding-right: max(1rem, calc((100vw - 80rem) / 2 + 1rem));
 }
 
 nav a,
