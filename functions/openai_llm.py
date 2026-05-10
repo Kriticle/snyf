@@ -67,7 +67,6 @@ class OpenAILLM:
             model=self.query_model,
             input=[{"role": "user", "content": [{"type": "input_text", "text": prompt}]}],
             text={"format": {"type": "json_object"}},
-            max_output_tokens=300,
         )
         return validate_json_object(response.output_text)
 
