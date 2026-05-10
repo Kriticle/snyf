@@ -269,6 +269,23 @@
         </section>
 
         <section class="mb-10 rounded-lg border border-gray-800 bg-gray-900 p-6">
+            <div class="flex items-center gap-3">
+                <span class="rounded bg-green-900 px-2 py-1 text-xs font-bold text-green-300">POST</span>
+                <h2 class="text-2xl font-bold text-white">/search/keyword</h2>
+            </div>
+            <p class="mt-2 text-gray-400">Runs a lexical baseline over product names, descriptions, categories, brands, enriched text, and extracted attributes. Request and response shape match <code class="text-primary">/search</code>.</p>
+
+            <pre class="mt-5 rounded bg-gray-950 p-4 text-sm text-gray-200"><code>curl -sS -X POST "$API_URL/search/keyword" \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: $API_KEY" \
+  -d '{
+    "collection_id": "coll_ss25",
+    "query": "linen dress",
+    "top_k": 5
+  }'</code></pre>
+        </section>
+
+        <section class="mb-10 rounded-lg border border-gray-800 bg-gray-900 p-6">
             <h2 class="text-2xl font-bold text-white">Errors And Limits</h2>
             <div class="mt-5 grid md:grid-cols-2 gap-5">
                 <div>

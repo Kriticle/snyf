@@ -81,6 +81,7 @@ class JsonStore:
             "currency": record.currency,
             "brand": record.brand,
             "name": record.raw_metadata.get("name"),
+            "description": record.raw_metadata.get("description"),
         }
         self._write_index(index)
 

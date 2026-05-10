@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -201,6 +202,46 @@ class SearchService:
     def search_sync(self, request: SearchRequest) -> list[SearchResult]:
         return self.search(request)
 
+    def keyword_search_with_metrics(self, request: SearchRequest) -> tuple[list[SearchResult], SearchMetrics]:
+        metrics = SearchMetrics()
+        started_at = time.perf_counter()
+
+        def timed_step(name: str, fn):
+            step_started = time.perf_counter()
+            try:
+                return fn()
+            finally:
+                metrics.steps_ms[name] = elapsed_ms(step_started)
+
+        timed_step("validate_top_k", lambda: validate_top_k(request.top_k))
+        documents = timed_step("load_documents", lambda: self.store.indexed_documents(request.collection_id))
+        metrics.document_count = len(documents)
+        query_terms = timed_step("tokenize_query", lambda: tokenize_keyword_text(request.query))
+
+        def score_documents() -> list[SearchResult]:
+            scored: list[SearchResult] = []
+            for document in documents:
+                feature_scores = keyword_feature_scores(document, query_terms)
+                if feature_scores["keyword_match"] <= 0:
+                    continue
+                scored.append(to_result(document, feature_scores))
+            return scored
+
+        results = timed_step("score_documents", score_documents)
+        metrics.filtered_count = len(results)
+        timed_step("sort_results", lambda: results.sort(key=lambda result: result.score, reverse=True))
+        final_results = results[: request.top_k]
+        metrics.candidate_count = len(results)
+        metrics.result_count = len(final_results)
+        metrics.total_ms = elapsed_ms(started_at)
+        self.last_metrics = metrics
+        return final_results, metrics
+
+    def keyword_search(self, request: SearchRequest) -> list[SearchResult]:
+        results, metrics = self.keyword_search_with_metrics(request)
+        self.last_metrics = metrics
+        return results
+
     def _load_collection_attribute_list(self, collection_id: str):
         config = self.store.get_collection_config(collection_id)
         if config is None:
@@ -302,6 +343,50 @@ def to_result(document: dict[str, Any], feature_scores: dict[str, float]) -> Sea
         currency=document.get("currency"),
         brand=document.get("brand"),
     )
+
+
+def keyword_feature_scores(document: dict[str, Any], query_terms: list[str]) -> dict[str, float]:
+    if not query_terms:
+        return {"keyword_match": 0.0, "_weight_total": 1.0}
+    field_texts = {
+        "name": document.get("name"),
+        "category": document.get("category"),
+        "brand": document.get("brand"),
+        "description": document.get("description"),
+        "enriched_text": document.get("enriched_text"),
+        "attributes": " ".join(str(value) for value in document.get("attrs", {}).values() if value is not None),
+    }
+    weighted_hits = 0.0
+    max_weight = 0.0
+    field_weights = {
+        "name": 3.0,
+        "category": 2.0,
+        "brand": 1.0,
+        "description": 2.0,
+        "enriched_text": 2.0,
+        "attributes": 2.5,
+    }
+    for term in query_terms:
+        term_hit = 0.0
+        for field, text in field_texts.items():
+            weight = field_weights[field]
+            tokens = set(tokenize_keyword_text(str(text or "")))
+            if term in tokens:
+                term_hit = max(term_hit, weight)
+        weighted_hits += term_hit
+        max_weight += max(field_weights.values())
+    return {
+        "keyword_match": weighted_hits / max_weight if max_weight else 0.0,
+        "_weight_total": 1.0,
+    }
+
+
+def tokenize_keyword_text(text: str) -> list[str]:
+    return [
+        token
+        for token in re.split(r"[^a-z0-9]+", text.lower())
+        if token and len(token) > 1
+    ]
 
 
 def available_attributes(documents: list[dict[str, Any]]) -> list[str]:

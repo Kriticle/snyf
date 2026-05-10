@@ -48,48 +48,27 @@ def create_app(data_dir: str = "data"):
 
     @app.post("/search")
     def search(payload: SearchPayload, x_api_key: str | None = Header(default=None)):
-        request_started = time.perf_counter()
-        api_steps: dict[str, float] = {}
-
-        def timed_step(name: str, fn):
-            step_started = time.perf_counter()
-            try:
-                return fn()
-            finally:
-                api_steps[name] = elapsed_ms(step_started)
-
-        customer = timed_step("authenticate_api_key", lambda: authenticate_request(auth_service, x_api_key))
-        try:
-            timed_step("validate_top_k", lambda: validate_top_k(payload.top_k))
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        try:
-            timed_step("reserve_usage", lambda: usage_service.reserve_search(customer))
-        except PlanLimitError as exc:
-            raise HTTPException(status_code=402, detail=str(exc)) from exc
-        collection = timed_step("load_collection", lambda: store.get_collection_config(payload.collection_id))
-        if collection is None or collection.customer_id != customer.customer_id:
-            raise HTTPException(status_code=404, detail="Collection not found.")
-        request = SearchRequest(
-            collection_id=payload.collection_id,
-            query=payload.query,
-            top_k=payload.top_k,
+        return execute_search(
+            payload=payload,
+            x_api_key=x_api_key,
+            auth_service=auth_service,
+            usage_service=usage_service,
+            store=store,
+            search_fn=service.search_with_metrics,
+            metric_name="search",
         )
-        results, search_metrics = timed_step("search_service", lambda: service.search_with_metrics(request))
-        api_total_ms = elapsed_ms(request_started)
-        metrics = {
-            "api_total_ms": round(api_total_ms, 2),
-            "api_steps_ms": {key: round(value, 2) for key, value in api_steps.items()},
-            "search": search_metrics.to_dict(),
-        }
-        logger.info(
-            "search latency metrics customer_id=%s collection_id=%s top_k=%s metrics=%s",
-            customer.customer_id,
-            payload.collection_id,
-            payload.top_k,
-            json.dumps(metrics, sort_keys=True),
+
+    @app.post("/search/keyword")
+    def keyword_search(payload: SearchPayload, x_api_key: str | None = Header(default=None)):
+        return execute_search(
+            payload=payload,
+            x_api_key=x_api_key,
+            auth_service=auth_service,
+            usage_service=usage_service,
+            store=store,
+            search_fn=service.keyword_search_with_metrics,
+            metric_name="keyword_search",
         )
-        return {"results": [serialize(result) for result in results], "metrics": metrics}
 
     @app.post("/search/filters")
     async def filters(payload: dict):
@@ -109,6 +88,61 @@ def create_app(data_dir: str = "data"):
         return {"facets": facets, "total_products": len(docs)}
 
     return app
+
+
+def execute_search(
+    *,
+    payload,
+    x_api_key: str | None,
+    auth_service: AuthService,
+    usage_service: UsageService,
+    store,
+    search_fn,
+    metric_name: str,
+):
+    request_started = time.perf_counter()
+    api_steps: dict[str, float] = {}
+
+    def timed_step(name: str, fn):
+        step_started = time.perf_counter()
+        try:
+            return fn()
+        finally:
+            api_steps[name] = elapsed_ms(step_started)
+
+    customer = timed_step("authenticate_api_key", lambda: authenticate_request(auth_service, x_api_key))
+    try:
+        timed_step("validate_top_k", lambda: validate_top_k(payload.top_k))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    try:
+        timed_step("reserve_usage", lambda: usage_service.reserve_search(customer))
+    except PlanLimitError as exc:
+        raise HTTPException(status_code=402, detail=str(exc)) from exc
+    collection = timed_step("load_collection", lambda: store.get_collection_config(payload.collection_id))
+    if collection is None or collection.customer_id != customer.customer_id:
+        raise HTTPException(status_code=404, detail="Collection not found.")
+    request = SearchRequest(
+        collection_id=payload.collection_id,
+        query=payload.query,
+        top_k=payload.top_k,
+    )
+    results, search_metrics = timed_step("search_service", lambda: search_fn(request))
+    api_total_ms = elapsed_ms(request_started)
+    metrics = {
+        "api_total_ms": round(api_total_ms, 2),
+        "api_steps_ms": {key: round(value, 2) for key, value in api_steps.items()},
+        "search": search_metrics.to_dict(),
+    }
+    logger.info(
+        "%s latency metrics customer_id=%s collection_id=%s top_k=%s metrics=%s",
+        metric_name,
+        customer.customer_id,
+        payload.collection_id,
+        payload.top_k,
+        json.dumps(metrics, sort_keys=True),
+    )
+    return {"results": [serialize(result) for result in results], "metrics": metrics}
 
 
 app = create_app() if FastAPI is not None else None

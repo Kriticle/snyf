@@ -698,6 +698,35 @@ prod_002,coll_a,Look Two,looks,https://cdn.example.com/p2.jpg,"[""primary_signal
             with self.assertRaises(ValueError):
                 SearchService(store).search(SearchRequest(collection_id="coll_ss25", query="anything", top_k=101))
 
+    def test_keyword_search_ranks_lexical_matches_without_llm(self) -> None:
+        async def fake_enrich(product_id, metadata, image_bytes, attribute_schema):
+            values = {
+                "prod_001": {"material": "linen", "occasion": "beach wedding"},
+                "prod_002": {"material": "wool", "occasion": "work dinner"},
+            }
+            return json.dumps(values[product_id])
+
+        csv_text = """product_id,collection_id,name,category,image_urls,attributes,description,price
+prod_001,coll_a,Linen Wrap Dress,dresses,https://cdn.example.com/p1.jpg,"[""material"",""occasion""]","Airy beach dress",100
+prod_002,coll_a,Structured Blazer,outerwear,https://cdn.example.com/p2.jpg,"[""material"",""occasion""]","Sharp work jacket",100
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            store = JsonStore(tmp)
+            CsvIngestionService(
+                store,
+                "cust_a",
+                attribute_list_uri=self.write_attribute_file(tmp, '{"attributes":["material","occasion"]}'),
+            ).ingest_csv(csv_text)
+            asyncio.run(EnrichmentWorker(store, enrich_fn=fake_enrich).drain_once())
+
+            results = SearchService(store).keyword_search(
+                SearchRequest(collection_id="coll_a", query="linen jacket", top_k=2)
+            )
+
+            self.assertEqual(results[0].product_id, "prod_001")
+            self.assertGreater(results[0].score, results[1].score)
+            self.assertIn("keyword_match", results[0].feature_scores)
+
     def test_search_api_rejects_top_k_above_limit_as_client_error(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = JsonStore(tmp)
@@ -720,6 +749,40 @@ prod_002,coll_a,Look Two,looks,https://cdn.example.com/p2.jpg,"[""primary_signal
 
             self.assertEqual(response.status_code, 400)
             self.assertIn("top_k cannot exceed", response.json()["detail"])
+
+    def test_keyword_search_api_returns_lexical_results(self) -> None:
+        async def fake_enrich(product_id, metadata, image_bytes, attribute_schema):
+            values = {
+                "prod_001": {"material": "linen", "occasion": "beach wedding"},
+                "prod_002": {"material": "wool", "occasion": "work dinner"},
+            }
+            return json.dumps(values[product_id])
+
+        csv_text = """product_id,collection_id,name,category,image_urls,attributes,description,price
+prod_001,coll_a,Linen Wrap Dress,dresses,https://cdn.example.com/p1.jpg,"[""material"",""occasion""]","Airy beach dress",100
+prod_002,coll_a,Structured Blazer,outerwear,https://cdn.example.com/p2.jpg,"[""material"",""occasion""]","Sharp work jacket",100
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            store = JsonStore(tmp)
+            signup = AuthService(store).signup("keyword@example.com", "password123")
+            CsvIngestionService(
+                store,
+                signup["customer"]["customer_id"],
+                attribute_list_uri=self.write_attribute_file(tmp, '{"attributes":["material","occasion"]}'),
+            ).ingest_csv(csv_text)
+            asyncio.run(EnrichmentWorker(store, enrich_fn=fake_enrich).drain_once())
+            client = TestClient(create_search_app(tmp))
+
+            response = client.post(
+                "/search/keyword",
+                headers={"x-api-key": signup["api_key"]},
+                json={"collection_id": "coll_a", "query": "linen jacket", "top_k": 2},
+            )
+
+            self.assertEqual(response.status_code, 200)
+            payload = response.json()
+            self.assertEqual(payload["results"][0]["product_id"], "prod_001")
+            self.assertIn("score_documents", payload["metrics"]["search"]["steps_ms"])
 
 
 if __name__ == "__main__":

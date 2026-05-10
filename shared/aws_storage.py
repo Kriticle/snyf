@@ -233,6 +233,7 @@ class AwsStore:
             "currency": record.currency,
             "brand": record.brand,
             "name": record.raw_metadata.get("name"),
+            "description": record.raw_metadata.get("description"),
         }
 
     def _document_id(self, collection_id: str, product_id: str) -> str:

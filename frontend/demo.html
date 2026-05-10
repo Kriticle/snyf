@@ -132,7 +132,17 @@
                 paginationControls.innerHTML = '';
                 try {
                     if (currentSearchMode !== 'snyf') {
-                        resultsContainer.innerHTML = `<p class="col-span-full text-center text-yellow-500">Regular search is a plain keyword baseline. It is not backed by a separate production endpoint yet, so use Snyf AI Search for live API results.</p>`;
+                        if (!API_KEY || !COLLECTION_ID) throw new Error('Sign up and save an API key plus collection in the dashboard first.');
+                        const response = await fetch(`${API_BASE_URL}/search/keyword`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY },
+                            body: JSON.stringify({ collection_id: COLLECTION_ID, query, top_k: PAGE_SIZE })
+                        });
+                        if (!response.ok) {
+                            const error = await response.json().catch(() => ({}));
+                            throw new Error(error.detail || 'Keyword API Error');
+                        }
+                        handleApiResponse(await response.json());
                         return;
                     }
                     if (!API_KEY || !COLLECTION_ID) throw new Error('Sign up and save an API key plus collection in the dashboard first.');

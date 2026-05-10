@@ -371,13 +371,33 @@
                             resultsContainer.innerHTML = `<div class="col-span-full text-center py-10"><p class="text-red-500">Search failed: ${error.message}</p></div>`;
                         }
                     } else { 
-                        // --- UPDATED KEYWORD SEARCH LOGIC (GET REQUEST) ---
                         try { 
-                            resultsContainer.innerHTML = `<div class="col-span-full text-center py-10"><p class="text-yellow-500">Regular search is a plain keyword baseline. It is not backed by a separate production endpoint yet, so use Snyf AI Search for live API results.</p></div>`;
-                            
+                            if (SNYF_API_KEY && SNYF_COLLECTION_ID) {
+                                const response = await fetch(`${SNYF_API_URL}/search/keyword`, {
+                                    method: 'POST',
+                                    headers: {
+                                        'Content-Type': 'application/json',
+                                        'x-api-key': SNYF_API_KEY
+                                    },
+                                    body: JSON.stringify({
+                                        collection_id: SNYF_COLLECTION_ID,
+                                        query,
+                                        top_k: 10
+                                    })
+                                });
+
+                                if (!response.ok) {
+                                    throw new Error(`Keyword Search API Error: ${response.status}`);
+                                }
+
+                                const data = await response.json();
+                                displayResults(data.results);
+                            } else {
+                                throw new Error('Sign up, save an API key, and choose a collection in the dashboard first.');
+                            }
                         } catch (error) { 
                             console.error(error);
-                            resultsContainer.innerHTML = `<div class="col-span-full text-center py-10"><p class="text-red-500">Search failed. (API/Server issue)</p></div>`; 
+                            resultsContainer.innerHTML = `<div class="col-span-full text-center py-10"><p class="text-red-500">Keyword search failed: ${error.message}</p></div>`; 
                         } 
                     }
                 };

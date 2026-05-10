@@ -905,6 +905,12 @@ resource "aws_apigatewayv2_route" "search" {
   target    = "integrations/${aws_apigatewayv2_integration.alb.id}"
 }
 
+resource "aws_apigatewayv2_route" "keyword_search" {
+  api_id    = aws_apigatewayv2_api.http.id
+  route_key = "POST /search/keyword"
+  target    = "integrations/${aws_apigatewayv2_integration.alb.id}"
+}
+
 resource "aws_apigatewayv2_stage" "default" {
   api_id      = aws_apigatewayv2_api.http.id
   name        = "$default"
