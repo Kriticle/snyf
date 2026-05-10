@@ -65,31 +65,6 @@
             <pre class="mt-5 rounded bg-gray-950 p-4 text-sm text-gray-200"><code>x-api-key: $API_KEY</code></pre>
         </section>
 
-        <section class="mb-10 rounded-lg border border-gray-800 bg-gray-900 p-6">
-            <h2 class="text-2xl font-bold text-white">API Keys</h2>
-            <p class="mt-2 text-gray-400">Use the login <code class="text-primary">refresh_token</code> as a bearer token for API-key management.</p>
-
-            <div class="mt-6 grid lg:grid-cols-2 gap-5">
-                <div>
-                    <div class="flex items-center gap-3 mb-2">
-                        <span class="rounded bg-blue-900 px-2 py-1 text-xs font-bold text-blue-400">GET</span>
-                        <h3 class="font-semibold text-white">/auth/api-keys</h3>
-                    </div>
-                    <pre class="rounded bg-gray-950 p-4 text-sm text-gray-200"><code>curl -sS "$API_URL/auth/api-keys" \
-  -H "Authorization: Bearer $REFRESH_TOKEN"</code></pre>
-                </div>
-
-                <div>
-                    <div class="flex items-center gap-3 mb-2">
-                        <span class="rounded bg-green-900 px-2 py-1 text-xs font-bold text-green-300">POST</span>
-                        <h3 class="font-semibold text-white">/auth/api-keys</h3>
-                    </div>
-                    <pre class="rounded bg-gray-950 p-4 text-sm text-gray-200"><code>curl -sS -X POST "$API_URL/auth/api-keys" \
-  -H "Authorization: Bearer $REFRESH_TOKEN"</code></pre>
-                </div>
-            </div>
-        </section>
-
         <section id="upload" class="mb-10 rounded-lg border border-gray-800 bg-gray-900 p-6">
             <div class="flex items-center gap-3">
                 <span class="rounded bg-green-900 px-2 py-1 text-xs font-bold text-green-300">POST</span>
