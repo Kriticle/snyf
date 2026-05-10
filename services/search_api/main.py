@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
+import time
 from dataclasses import asdict
 
 from shared.models import SearchRequest
@@ -10,6 +12,8 @@ from shared.plans import PlanLimitError, UsageService
 from shared.search import SearchService, validate_top_k
 from shared.store_factory import create_store
 from shared.storage import JsonStore
+
+logger = logging.getLogger(__name__)
 
 try:
     from fastapi import FastAPI, Header, HTTPException
@@ -44,16 +48,26 @@ def create_app(data_dir: str = "data"):
 
     @app.post("/search")
     def search(payload: SearchPayload, x_api_key: str | None = Header(default=None)):
-        customer = authenticate_request(auth_service, x_api_key)
+        request_started = time.perf_counter()
+        api_steps: dict[str, float] = {}
+
+        def timed_step(name: str, fn):
+            step_started = time.perf_counter()
+            try:
+                return fn()
+            finally:
+                api_steps[name] = elapsed_ms(step_started)
+
+        customer = timed_step("authenticate_api_key", lambda: authenticate_request(auth_service, x_api_key))
         try:
-            validate_top_k(payload.top_k)
+            timed_step("validate_top_k", lambda: validate_top_k(payload.top_k))
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         try:
-            usage_service.reserve_search(customer)
+            timed_step("reserve_usage", lambda: usage_service.reserve_search(customer))
         except PlanLimitError as exc:
             raise HTTPException(status_code=402, detail=str(exc)) from exc
-        collection = store.get_collection_config(payload.collection_id)
+        collection = timed_step("load_collection", lambda: store.get_collection_config(payload.collection_id))
         if collection is None or collection.customer_id != customer.customer_id:
             raise HTTPException(status_code=404, detail="Collection not found.")
         request = SearchRequest(
@@ -61,8 +75,21 @@ def create_app(data_dir: str = "data"):
             query=payload.query,
             top_k=payload.top_k,
         )
-        results = service.search(request)
-        return {"results": [serialize(result) for result in results]}
+        results, search_metrics = timed_step("search_service", lambda: service.search_with_metrics(request))
+        api_total_ms = elapsed_ms(request_started)
+        metrics = {
+            "api_total_ms": round(api_total_ms, 2),
+            "api_steps_ms": {key: round(value, 2) for key, value in api_steps.items()},
+            "search": search_metrics.to_dict(),
+        }
+        logger.info(
+            "search latency metrics customer_id=%s collection_id=%s top_k=%s metrics=%s",
+            customer.customer_id,
+            payload.collection_id,
+            payload.top_k,
+            json.dumps(metrics, sort_keys=True),
+        )
+        return {"results": [serialize(result) for result in results], "metrics": metrics}
 
     @app.post("/search/filters")
     async def filters(payload: dict):
@@ -91,6 +118,10 @@ def serialize(value):
     if hasattr(value, "__dataclass_fields__"):
         return asdict(value)
     return value
+
+
+def elapsed_ms(started_at: float) -> float:
+    return (time.perf_counter() - started_at) * 1000
 
 
 def authenticate_request(auth_service: AuthService, x_api_key: str | None):

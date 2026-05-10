@@ -31,5 +31,17 @@ def embed_fn():
     return local_embed
 
 
+def embed_many_fn():
+    if provider_name() == "openai":
+        from functions.openai_llm import OpenAILLM
+
+        return OpenAILLM().embed_many
+
+    def embed_many(texts: list[str]) -> list[list[float]]:
+        return [local_embed(text) for text in texts]
+
+    return embed_many
+
+
 def provider_name() -> str:
     return os.getenv("LLM_PROVIDER", "fake").strip().lower()

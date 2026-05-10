@@ -584,6 +584,50 @@ prod_002,coll_a,Look Two,looks,https://cdn.example.com/p2.jpg,"[""occasion"",""s
             self.assertIn("occasion", results[0].feature_scores)
             self.assertIn("style_mood", results[0].feature_scores)
 
+    def test_search_api_returns_latency_metrics_and_reuses_embedding_cache(self) -> None:
+        async def fake_enrich(product_id, metadata, image_bytes, attribute_schema):
+            return json.dumps({"style_mood": "relaxed beach look"})
+
+        embed_calls = {"count": 0}
+
+        def fake_embed(text):
+            embed_calls["count"] += 1
+            return [1.0, 0.0] if "relaxed" in text or "beach" in text else [0.0, 1.0]
+
+        def fake_query_parser(query, available_attributes):
+            return json.dumps(
+                {
+                    "attributes": {"style_mood": "relaxed beach look"},
+                    "hard_filters": {},
+                    "weights": {},
+                }
+            )
+
+        csv_text = """product_id,collection_id,name,category,image_urls,attributes,description,price
+prod_001,coll_a,Look One,looks,https://cdn.example.com/p1.jpg,"[""style_mood""]","One",100
+prod_002,coll_a,Look Two,looks,https://cdn.example.com/p2.jpg,"[""style_mood""]","Two",100
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            store = JsonStore(tmp)
+            CsvIngestionService(
+                store,
+                "cust_a",
+                attribute_list_uri=self.write_attribute_file(tmp, '{"attributes":["style_mood"]}'),
+            ).ingest_csv(csv_text)
+            asyncio.run(EnrichmentWorker(store, enrich_fn=fake_enrich, embed_fn=fake_embed).drain_once())
+            service = SearchService(store, embed_fn=fake_embed, query_attribute_fn=fake_query_parser)
+
+            results, metrics = service.search_with_metrics(
+                SearchRequest(collection_id="coll_a", query="relaxed beach", top_k=2)
+            )
+
+            self.assertEqual(len(results), 2)
+            self.assertIn("extract_query_attributes", metrics.steps_ms)
+            self.assertIn("rerank_candidates", metrics.steps_ms)
+            self.assertEqual(metrics.candidate_count, 2)
+            self.assertGreater(metrics.embedding_cache_hits, 0)
+            self.assertLessEqual(metrics.embedding_calls, 3)
+
     def test_attribute_list_weights_are_used_when_llm_omits_weights(self) -> None:
         async def fake_enrich(product_id, metadata, image_bytes, attribute_schema):
             values = {

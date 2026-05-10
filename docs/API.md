@@ -350,6 +350,38 @@ Response:
 
 ```json
 {
+  "metrics": {
+    "api_total_ms": 823.41,
+    "api_steps_ms": {
+      "authenticate_api_key": 12.3,
+      "validate_top_k": 0.01,
+      "reserve_usage": 8.11,
+      "load_collection": 6.44,
+      "search_service": 790.02
+    },
+    "search": {
+      "total_ms": 790.0,
+      "steps_ms": {
+        "load_attribute_list": 35.21,
+        "embed_query": 96.31,
+        "load_documents": 42.89,
+        "extract_query_attributes": 488.17,
+        "merge_weights": 0.01,
+        "apply_hard_filters": 0.02,
+        "vector_candidate_sort": 0.05,
+        "embed_rerank_attributes": 126.48,
+        "rerank_candidates": 0.42,
+        "sort_results": 0.01
+      },
+      "document_count": 4,
+      "filtered_count": 4,
+      "candidate_count": 4,
+      "result_count": 3,
+      "embedding_calls": 2,
+      "embedding_texts": 4,
+      "embedding_cache_hits": 4
+    }
+  },
   "results": [
     {
       "product_id": "prod_003",
@@ -375,6 +407,8 @@ Response:
   ]
 }
 ```
+
+Metrics are returned on every search response and are also written to the search API logs. Use them to identify whether latency is coming from auth/usage checks, collection lookup, attribute-list loading, query embedding, query-attribute LLM parsing, OpenSearch document retrieval, or reranking.
 
 Example:
 

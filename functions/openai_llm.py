@@ -68,6 +68,12 @@ class OpenAILLM:
         response = self.client.embeddings.create(model=self.embedding_model, input=text)
         return response.data[0].embedding
 
+    def embed_many(self, texts: list[str]) -> list[list[float]]:
+        if not texts:
+            return []
+        response = self.client.embeddings.create(model=self.embedding_model, input=texts)
+        return [item.embedding for item in response.data]
+
 
 def image_data_url(image: bytes, mime_type: str = "image/jpeg") -> str:
     encoded = base64.b64encode(image).decode("utf-8")
