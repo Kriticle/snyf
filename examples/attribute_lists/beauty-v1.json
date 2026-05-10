@@ -1,0 +1,12 @@
+{
+  "attributes": [
+    { "name": "finish", "weight": 1.0 },
+    { "name": "coverage", "weight": 1.0 },
+    { "name": "skin_concern", "weight": 1.0 },
+    { "name": "skin_type", "weight": 1.0 },
+    { "name": "color_family", "weight": 1.0 },
+    { "name": "use_case", "weight": 1.0 },
+    { "name": "texture", "weight": 1.0 },
+    { "name": "routine_step", "weight": 1.0 }
+  ]
+}

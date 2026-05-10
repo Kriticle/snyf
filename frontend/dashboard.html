@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Snyf | Client Dashboard</title>
+    <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+    <meta property="og:image" content="assets/snyf-thumbnail.svg">
+    <meta name="twitter:image" content="assets/snyf-thumbnail.svg">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="styles.css">
@@ -153,13 +156,15 @@
                             <h2 class="text-2xl font-bold text-white flex items-center">
                                 <i class="fas fa-cloud-upload-alt text-secondary mr-3"></i>Upload CSV
                             </h2>
-                            <p class="text-gray-400 text-sm mt-1">Send a catalog file to ingestion. The worker enriches each row with the collection attribute list.</p>
+                            <p class="text-gray-400 text-sm mt-1">Send a catalog file to ingestion. Choose one attribute list for the whole collection.</p>
                             <div class="mt-5 space-y-3">
                                 <a href="assets/catalog-template.csv" download class="inline-flex items-center text-sm font-semibold text-primary hover:text-secondary">
                                     <i class="fas fa-download mr-2"></i>Download CSV template
                                 </a>
                                 <input type="file" id="csv-file-input" accept=".csv,text/csv" class="block w-full text-sm text-gray-300 file:mr-4 file:rounded-md file:border-0 file:bg-primary file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-primary/90">
+                                <label for="attribute-list-id-input" class="block text-sm font-semibold text-gray-400">Product attribute list</label>
                                 <select id="attribute-list-id-input" class="w-full px-4 py-3 rounded-lg bg-gray-900 border border-gray-700 text-white focus:ring-primary focus:border-primary placeholder-gray-500 focus:outline-none"></select>
+                                <p class="text-xs text-gray-500">Required for every upload. This is the file name, not an S3 URI.</p>
                                 <button type="submit" id="upload-submit-btn" class="w-full bg-secondary text-white font-semibold px-5 py-3 rounded-lg hover:bg-secondary/90 transition">
                                     Upload Catalog
                                 </button>
@@ -182,10 +187,11 @@
         const SNYF_API_URL = 'https://xydj4rm9eg.execute-api.us-east-1.amazonaws.com';
         const DEFAULT_ATTRIBUTE_LIST_ID = 'smoke-fashion-v1';
         const ATTRIBUTE_LISTS = [
-            { id: 'smoke-fashion-v1', label: 'Fashion starter', required: true },
-            { id: 'fashion-v1', label: 'Fashion expanded', required: true },
-            { id: 'beauty-v1', label: 'Beauty starter', required: false },
-            { id: 'home-v1', label: 'Home goods starter', required: false }
+            { id: 'smoke-fashion-v1', label: 'Fashion starter', category: 'Apparel' },
+            { id: 'fashion-v1', label: 'Fashion expanded', category: 'Apparel' },
+            { id: 'fashion-detailed-v1', label: 'Fashion detailed', category: 'Apparel' },
+            { id: 'beauty-v1', label: 'Beauty starter', category: 'Beauty' },
+            { id: 'home-v1', label: 'Home goods starter', category: 'Home' }
         ];
 
         // --- GLOBAL STATE ---
@@ -294,8 +300,7 @@
         const populateAttributeLists = () => {
             const savedAttributeListId = localStorage.getItem('snyfAttributeListId') || DEFAULT_ATTRIBUTE_LIST_ID;
             attributeListIdInput.innerHTML = ATTRIBUTE_LISTS.map((item) => {
-                const requiredText = item.required ? 'required' : 'optional';
-                return `<option value="${item.id}">${item.label} - ${item.id} (${requiredText})</option>`;
+                return `<option value="${item.id}">${item.label} - ${item.id} (${item.category})</option>`;
             }).join('');
             attributeListIdInput.value = savedAttributeListId;
             if (!attributeListIdInput.value) {

@@ -1,0 +1,99 @@
+{
+  "attributes": [
+    {
+      "name": "type_of_garment",
+      "weight": 1.0,
+      "description": "The type of clothing item, e.g., Dress, Top, Bottom, Outerwear, Accessories."
+    },
+    {
+      "name": "material",
+      "weight": 1.0,
+      "description": "The primary material of the fabric, e.g., Cotton, Polyester, Silk. Extract from text if possible."
+    },
+    {
+      "name": "weave",
+      "weight": 1.0,
+      "description": "The weave of the fabric, e.g., Twill, Satin, Poplin. Extract from text if available."
+    },
+    {
+      "name": "fiber_blend",
+      "weight": 1.0,
+      "description": "The specific fiber composition, e.g., 80% Cotton / 20% Polyester. Extract from text if available."
+    },
+    {
+      "name": "primary_color_overall",
+      "weight": 1.0,
+      "description": "The general category of the main color, e.g., Red, Blue, Green, Pink."
+    },
+    {
+      "name": "primary_color_specific",
+      "weight": 1.0,
+      "description": "The specific shade of the main color, e.g., Lavender, Mauve, Crimson, Sage Green."
+    },
+    {
+      "name": "secondary_color_overall",
+      "weight": 1.0,
+      "description": "The general category of the second most prominent color, if present."
+    },
+    {
+      "name": "secondary_color_specific",
+      "weight": 1.0,
+      "description": "The specific shade of the secondary color, e.g., Gold, Silver, Mint Green."
+    },
+    {
+      "name": "pattern_or_print",
+      "weight": 1.0,
+      "description": "The visual pattern on the fabric, e.g., Solid, Floral, Striped, Polka Dot, Abstract."
+    },
+    {
+      "name": "fit",
+      "weight": 1.0,
+      "description": "The fit of the garment on the body, e.g., Slim Fit, Regular Fit, Oversized, Relaxed Fit."
+    },
+    {
+      "name": "aesthetic",
+      "weight": 1.0,
+      "description": "The overall style or vibe of the item, e.g., Cute, Elegant, Corporate, Grunge, K-Pop, Modest."
+    },
+    {
+      "name": "occasion",
+      "weight": 1.0,
+      "description": "Suitable occasions for wearing the item, e.g., Date Night, Office, Picnic, Wedding Guest, Casual."
+    },
+    {
+      "name": "neckline",
+      "weight": 1.0,
+      "description": "The style of the garment's neckline, e.g., V-Neck, Crew Neck, Scoop Neck, Halter."
+    },
+    {
+      "name": "sleeve_length",
+      "weight": 1.0,
+      "description": "The length of the sleeves, e.g., Sleeveless, Short Sleeve, Three-Quarter, Long Sleeve."
+    },
+    {
+      "name": "sleeve_style",
+      "weight": 1.0,
+      "description": "The design of the sleeves, e.g., Puff, Bell, Raglan, Cap Sleeve."
+    },
+    {
+      "name": "silhouette",
+      "weight": 1.0,
+      "description": "The overall shape or outline of the garment, e.g., A-Line, Sheath, Mermaid, Ball Gown."
+    },
+    {
+      "name": "waistband",
+      "weight": 1.0,
+      "description": "The style of the waistband, e.g., Elastic, High-Waisted, Drawstring, Paperbag."
+    },
+    {
+      "name": "length",
+      "weight": 1.0,
+      "description": "The overall length of the garment, e.g., Mini, Midi, Maxi, Cropped, Ankle-Length."
+    },
+    {
+      "name": "brand",
+      "weight": 1.0,
+      "description": "The brand name of the product, if visible or known."
+    }
+  ]
+}

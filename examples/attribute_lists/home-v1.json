@@ -1,0 +1,12 @@
+{
+  "attributes": [
+    { "name": "room", "weight": 1.0 },
+    { "name": "decor_style", "weight": 1.0 },
+    { "name": "material", "weight": 1.0 },
+    { "name": "color_mood", "weight": 1.0 },
+    { "name": "shape", "weight": 1.0 },
+    { "name": "use_case", "weight": 1.0 },
+    { "name": "space_size", "weight": 1.0 },
+    { "name": "design_energy", "weight": 1.0 }
+  ]
+}

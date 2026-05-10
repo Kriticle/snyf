@@ -1,0 +1,21 @@
+product_id,name,image_urls,category,description,price,currency,brand
+cid001_100,CID 001 Product 100,https://snyf-website.vercel.app/assets/demo-catalog/cid001_100.jpg,apparel,"Demo catalog item 100 from cid_001, for detailed fashion attribute enrichment.",100,USD,Snyf Demo
+cid001_101,CID 001 Product 101,https://snyf-website.vercel.app/assets/demo-catalog/cid001_101.jpg,apparel,"Demo catalog item 101 from cid_001, for detailed fashion attribute enrichment.",101,USD,Snyf Demo
+cid001_102,CID 001 Product 102,https://snyf-website.vercel.app/assets/demo-catalog/cid001_102.jpg,apparel,"Demo catalog item 102 from cid_001, for detailed fashion attribute enrichment.",102,USD,Snyf Demo
+cid001_103,CID 001 Product 103,https://snyf-website.vercel.app/assets/demo-catalog/cid001_103.webp,apparel,"Demo catalog item 103 from cid_001, for detailed fashion attribute enrichment.",103,USD,Snyf Demo
+cid001_104,CID 001 Product 104,https://snyf-website.vercel.app/assets/demo-catalog/cid001_104.jpg,apparel,"Demo catalog item 104 from cid_001, for detailed fashion attribute enrichment.",104,USD,Snyf Demo
+cid001_105,CID 001 Product 105,https://snyf-website.vercel.app/assets/demo-catalog/cid001_105.jpg,apparel,"Demo catalog item 105 from cid_001, for detailed fashion attribute enrichment.",105,USD,Snyf Demo
+cid001_106,CID 001 Product 106,https://snyf-website.vercel.app/assets/demo-catalog/cid001_106.jpg,apparel,"Demo catalog item 106 from cid_001, for detailed fashion attribute enrichment.",106,USD,Snyf Demo
+cid001_107,CID 001 Product 107,https://snyf-website.vercel.app/assets/demo-catalog/cid001_107.jpg,apparel,"Demo catalog item 107 from cid_001, for detailed fashion attribute enrichment.",107,USD,Snyf Demo
+cid001_108,CID 001 Product 108,https://snyf-website.vercel.app/assets/demo-catalog/cid001_108.jpg,apparel,"Demo catalog item 108 from cid_001, for detailed fashion attribute enrichment.",108,USD,Snyf Demo
+cid001_109,CID 001 Product 109,https://snyf-website.vercel.app/assets/demo-catalog/cid001_109.jpg,apparel,"Demo catalog item 109 from cid_001, for detailed fashion attribute enrichment.",109,USD,Snyf Demo
+cid001_110,CID 001 Product 110,https://snyf-website.vercel.app/assets/demo-catalog/cid001_110.jpg,apparel,"Demo catalog item 110 from cid_001, for detailed fashion attribute enrichment.",110,USD,Snyf Demo
+cid001_111,CID 001 Product 111,https://snyf-website.vercel.app/assets/demo-catalog/cid001_111.jpg,apparel,"Demo catalog item 111 from cid_001, for detailed fashion attribute enrichment.",111,USD,Snyf Demo
+cid001_112,CID 001 Product 112,https://snyf-website.vercel.app/assets/demo-catalog/cid001_112.jpg,apparel,"Demo catalog item 112 from cid_001, for detailed fashion attribute enrichment.",112,USD,Snyf Demo
+cid001_113,CID 001 Product 113,https://snyf-website.vercel.app/assets/demo-catalog/cid001_113.jpg,apparel,"Demo catalog item 113 from cid_001, for detailed fashion attribute enrichment.",113,USD,Snyf Demo
+cid001_114,CID 001 Product 114,https://snyf-website.vercel.app/assets/demo-catalog/cid001_114.webp,apparel,"Demo catalog item 114 from cid_001, for detailed fashion attribute enrichment.",114,USD,Snyf Demo
+cid001_115,CID 001 Product 115,https://snyf-website.vercel.app/assets/demo-catalog/cid001_115.jpg,apparel,"Demo catalog item 115 from cid_001, for detailed fashion attribute enrichment.",115,USD,Snyf Demo
+cid001_116,CID 001 Product 116,https://snyf-website.vercel.app/assets/demo-catalog/cid001_116.jpg,apparel,"Demo catalog item 116 from cid_001, for detailed fashion attribute enrichment.",116,USD,Snyf Demo
+cid001_117,CID 001 Product 117,https://snyf-website.vercel.app/assets/demo-catalog/cid001_117.webp,apparel,"Demo catalog item 117 from cid_001, for detailed fashion attribute enrichment.",117,USD,Snyf Demo
+cid001_118,CID 001 Product 118,https://snyf-website.vercel.app/assets/demo-catalog/cid001_118.jpg,apparel,"Demo catalog item 118 from cid_001, for detailed fashion attribute enrichment.",118,USD,Snyf Demo
+cid001_119,CID 001 Product 119,https://snyf-website.vercel.app/assets/demo-catalog/cid001_119.jpg,apparel,"Demo catalog item 119 from cid_001, for detailed fashion attribute enrichment.",119,USD,Snyf Demo

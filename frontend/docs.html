@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Snyf API Documentation</title>
+    <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+    <meta property="og:image" content="assets/snyf-thumbnail.svg">
+    <meta name="twitter:image" content="assets/snyf-thumbnail.svg">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="styles.css">
@@ -123,13 +126,15 @@
             </div>
             <p class="mt-2 text-gray-400">Uploads a catalog CSV to one collection and queues accepted rows for enrichment.</p>
 
-            <label for="docs-attribute-list" class="block mt-5 text-sm font-semibold text-gray-400">Attribute list</label>
+            <label for="docs-attribute-list" class="block mt-5 text-sm font-semibold text-gray-400">Product attribute list</label>
             <select id="docs-attribute-list" class="mt-2 w-full max-w-xl px-4 py-3 rounded-lg bg-gray-900 border border-gray-700 text-white focus:ring-primary focus:border-primary focus:outline-none">
-                <option value="smoke-fashion-v1">Fashion starter - smoke-fashion-v1 (required)</option>
-                <option value="fashion-v1">Fashion expanded - fashion-v1 (required)</option>
-                <option value="beauty-v1">Beauty starter - beauty-v1 (optional)</option>
-                <option value="home-v1">Home goods starter - home-v1 (optional)</option>
+                <option value="smoke-fashion-v1">Fashion starter - smoke-fashion-v1 (Apparel)</option>
+                <option value="fashion-v1">Fashion expanded - fashion-v1 (Apparel)</option>
+                <option value="fashion-detailed-v1">Fashion detailed - fashion-detailed-v1 (Apparel)</option>
+                <option value="beauty-v1">Beauty starter - beauty-v1 (Beauty)</option>
+                <option value="home-v1">Home goods starter - home-v1 (Home)</option>
             </select>
+            <p class="mt-2 text-xs text-gray-500">Required for every upload. Send only the file name, not an S3 URI.</p>
 
             <pre class="mt-5 rounded bg-gray-950 p-4 text-sm text-gray-200"><code>curl -sS -X POST "$API_URL/collections/coll_ss25/upload" \
   -H "x-api-key: $API_KEY" \

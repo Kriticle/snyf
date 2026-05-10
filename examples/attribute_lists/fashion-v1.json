@@ -1,0 +1,14 @@
+{
+  "attributes": [
+    { "name": "occasion", "weight": 1.0 },
+    { "name": "silhouette", "weight": 1.0 },
+    { "name": "fabric_feel", "weight": 1.0 },
+    { "name": "fit_intent", "weight": 1.0 },
+    { "name": "style_mood", "weight": 1.0 },
+    { "name": "trend_vibe", "weight": 1.0 },
+    { "name": "print_energy", "weight": 1.0 },
+    { "name": "seasonality", "weight": 1.0 },
+    { "name": "layering_role", "weight": 1.0 },
+    { "name": "styling_notes", "weight": 1.0 }
+  ]
+}

@@ -111,6 +111,28 @@ Set the deployed API Gateway URL:
 export API_URL=https://xydj4rm9eg.execute-api.us-east-1.amazonaws.com
 ```
 
+### Add Your Own CSV
+
+Use the dashboard upload card or call the API directly. Your CSV needs these columns:
+
+```text
+product_id,name,image_urls
+```
+
+Helpful optional columns:
+
+```text
+category,description,price,currency,brand,attributes,_deleted
+```
+
+Rules:
+
+- `image_urls` must contain public HTTPS image URLs.
+- Pick one dashboard attribute list for the collection, for example `fashion-v1`.
+- Send only the attribute-list file name, not an S3 URI.
+- Upload one collection at a time: the URL collection is the collection being indexed.
+- After upload, poll the returned `job_id` until status is `READY`, then search the same `collection_id`.
+
 ### Deployed End-to-End Smoke Test
 
 This uses the currently deployed AWS stack, OpenAI-backed enrichment, and the shared smoke-test attribute list in S3.
