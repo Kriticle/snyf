@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Snyf | AI-Powered Visual Search</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://unpkg.com/@studio-freight/lenis@1.0.42/dist/lenis.min.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#8B5CF6',
+                        secondary: '#F97316',
+                        dark: '#111827',
+                        "dark-accent": '#1F2937',
+                        light: '#F9FAFB',
+                    },
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                }
+            }
+        }
+    </script>
+    <style>
+        html { scroll-behavior: auto !important; }
+        .snyf-gradient-bg {
+            background-image: linear-gradient(to bottom right, rgba(45, 212, 191, 0.12), rgba(255, 107, 74, 0.08));
+        }
+    </style>
+</head>
+<body class="bg-dark text-gray-300">
+
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="grid grid-cols-12 gap-x-8">
+            
+            <nav class="col-span-12 py-6 flex justify-between items-center sticky top-0 bg-dark/80 backdrop-blur-lg z-50">
+                <a href="index.html" class="flex items-center"><i class="fas fa-braille text-primary text-2xl mr-2"></i><span class="text-xl font-bold text-white">Snyf</span></a>
+                <div class="hidden md:flex items-center space-x-8">
+                    <a href="#demo" class="text-gray-300 hover:text-white transition-colors">Live Demo</a>
+                    <a href="#architecture" class="text-gray-300 hover:text-white transition-colors">Architecture</a>
+                    <a href="#features" class="text-gray-300 hover:text-white transition-colors">Features</a>
+                    <a href="#pricing" class="text-gray-300 hover:text-white transition-colors">Pricing</a>
+                    <a href="docs.html" class="text-gray-300 hover:text-white transition-colors">Documentation</a>
+                    
+                    <a href="login.html" class="text-gray-300 hover:text-white transition-colors">Log In</a>
+                    <a href="signup.html" class="bg-primary text-white rounded-md px-4 py-2 text-sm font-medium hover:bg-primary/90 transition">Sign Up</a>
+                </div>
+                <div class="-mr-2 flex items-center md:hidden"><button type="button" id="mobile-menu-button" class="inline-flex items-center justify-center p-2 rounded-md text-gray-400" aria-label="Open menu" aria-expanded="false"><i class="fas fa-bars"></i></button></div>
+            </nav>
+            <div class="snyf-menu-backdrop md:hidden" id="mobile-menu-backdrop"></div>
+            <div class="snyf-mobile-menu md:hidden" id="mobile-menu" aria-hidden="true">
+                <div class="flex items-center justify-between mb-8">
+                    <a href="index.html" class="flex items-center"><i class="fas fa-braille text-primary text-2xl mr-2"></i><span class="text-xl font-bold text-white">Snyf</span></a>
+                    <button type="button" id="mobile-menu-close" class="inline-flex items-center justify-center p-2 rounded-md text-gray-400" aria-label="Close menu"><i class="fas fa-xmark"></i></button>
+                </div>
+                <div class="space-y-2">
+                    <a href="#demo" class="snyf-mobile-menu-link">Live Demo</a>
+                    <a href="#architecture" class="snyf-mobile-menu-link">Architecture</a>
+                    <a href="#features" class="snyf-mobile-menu-link">Features</a>
+                    <a href="#pricing" class="snyf-mobile-menu-link">Pricing</a>
+                    <a href="docs.html" class="snyf-mobile-menu-link">Documentation</a>
+                </div>
+                <div class="mt-8 grid gap-3">
+                    <a href="login.html" class="snyf-mobile-menu-link text-primary">Log In</a>
+                    <a href="signup.html" class="snyf-mobile-menu-link text-primary">Sign Up</a>
+                </div>
+            </div>
+
+            <section class="col-span-12 pt-10 md:pt-20 pb-12">
+                <div class="max-w-4xl">
+                    <p class="snyf-kicker mb-5"><i class="fas fa-sparkles"></i> Attribute search for modern catalogs</p>
+                    <h1 class="text-5xl md:text-7xl font-extrabold mb-6 text-white">Search for the way a product <span class="gradient-text">feels.</span></h1>
+                    <p class="text-lg text-gray-400 max-w-2xl">Snyf enriches every product with customer-defined attributes, then lets shoppers search by mood, occasion, silhouette, styling intent, and everything your standard catalog forgot to say.</p>
+                </div>
+                <div class="mt-8 flex flex-col sm:flex-row gap-3">
+                    <a href="#demo" class="bg-primary text-lg font-semibold px-8 py-3 rounded-lg hover:bg-primary/90 transition shadow-lg">Try Live Demo</a>
+                    <a href="signup.html" class="text-gray-300 text-lg font-semibold px-8 py-3 rounded-lg border border-gray-700 hover:border-primary transition">Get Started</a>
+                </div>
+            </section>
+
+            <section id="demo" class="col-span-12 pt-0 pb-16 sm:pb-24">
+                <div class="snyf-panel p-6 sm:p-10">
+                    <div class="mb-8 flex flex-col lg:flex-row lg:items-end lg:justify-between gap-5">
+                        <div>
+                            <p class="snyf-kicker mb-3"><i class="fas fa-wave-square"></i> Live comparison</p>
+                            <h2 class="text-3xl font-bold text-white">Natural language in. Ranked products out.</h2>
+                            <p class="text-gray-400 mt-2">Compare semantic product understanding with traditional keyword search.</p>
+                        </div>
+                        <div class="inline-flex rounded-lg bg-gray-900 p-1 mt-6 space-x-1">
+                            <button id="snyf-search-btn" class="px-6 py-2 text-sm font-semibold rounded-md transition-all duration-200"></button>
+                            <button id="normal-search-btn" class="px-6 py-2 text-sm font-semibold rounded-md transition-all duration-200"></button>
+                        </div>
+                    </div>
+                    
+                    <form id="search-form" class="max-w-xl mx-auto mb-10">
+                        <div class="flex">
+                            <input type="text" id="search-input" class="w-full px-5 py-3 text-gray-300 bg-dark-accent border border-r-0 border-gray-600 rounded-l-lg focus:outline-none focus:ring-2 focus:ring-secondary placeholder-gray-500" placeholder="Describe a clothing item..." required>
+                            <button type="submit" class="bg-primary text-white font-semibold px-6 py-3 rounded-r-lg hover:bg-primary/90 transition-colors">Search</button>
+                        </div>
+                    </form>
+                    
+                    <div id="results-container" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                        </div>
+
+                    <div id="full-demo-link-container" class="text-center mt-10">
+                        <a href="signup.html" class="text-primary font-semibold hover:text-primary/80 transition-colors">Ready to use Snyf with YOUR products? Sign Up &rarr;</a>
+                    </div>
+                </div>
+            </section>
+
+            <section id="architecture" class="col-span-12 py-16 sm:py-20">
+                <div class="text-center max-w-3xl mx-auto">
+                    <p class="snyf-kicker mb-4"><i class="fas fa-diagram-project"></i> Basic architecture</p>
+                    <h2 class="text-4xl font-bold text-white tracking-tight">From product context to ranked results.</h2>
+                    <p class="mt-4 text-lg text-gray-400">Snyf turns product images and descriptions into structured attributes, vectors, and reranked search results.</p>
+                </div>
+                <div class="mt-12 grid gap-4 md:grid-cols-5">
+                    <div class="snyf-arch-step">
+                        <span>01</span>
+                        <i class="fas fa-shirt"></i>
+                        <h3>Image + Description</h3>
+                        <p>Product photos, names, descriptions, and raw metadata.</p>
+                    </div>
+                    <div class="snyf-arch-step">
+                        <span>02</span>
+                        <i class="fas fa-wand-magic-sparkles"></i>
+                        <h3>LLM Extraction</h3>
+                        <p>Attributes are filled from the collection taxonomy.</p>
+                    </div>
+                    <div class="snyf-arch-step">
+                        <span>03</span>
+                        <i class="fas fa-vector-square"></i>
+                        <h3>Embeddings</h3>
+                        <p>Enriched product text becomes searchable vectors.</p>
+                    </div>
+                    <div class="snyf-arch-step">
+                        <span>04</span>
+                        <i class="fas fa-ranking-star"></i>
+                        <h3>Reranking</h3>
+                        <p>Query attributes score and reorder candidates.</p>
+                    </div>
+                    <div class="snyf-arch-step">
+                        <span>05</span>
+                        <i class="fas fa-images"></i>
+                        <h3>Results</h3>
+                        <p>Search returns product cards with image URLs.</p>
+                    </div>
+                </div>
+            </section>
+
+            <section id="features" class="col-span-12 py-20 sm:py-24">
+                <div class="text-center"><h2 class="text-4xl font-bold text-white tracking-tight">A Smarter Way to Search</h2><p class="mt-4 text-lg text-gray-400 max-w-2xl mx-auto">Snyf goes beyond keywords to understand your products at a visual level.</p></div>
+                <div class="mt-16 grid md:grid-cols-3 gap-8 text-center">
+                    
+                    <div class="bg-dark-accent p-8 rounded-2xl border border-gray-800 shadow-lg shadow-purple-900/10">
+                        <div class="mx-auto w-14 h-14 bg-primary/10 rounded-xl flex items-center justify-center mb-5">
+                            <i class="fas fa-tags text-primary text-2xl"></i>
+                        </div>
+                        <h3 class="text-xl font-semibold text-white">Automatic AI Tagging</h3>
+                        <p class="mt-2 text-gray-400">Stop manual entry. Snyf automatically detects and tags attributes like <strong class="text-gray-200">color, pattern, and style</strong>.</p>
+                    </div>
+
+                    <div class="bg-dark-accent p-8 rounded-2xl border border-gray-800">
+                        <div class="mx-auto w-14 h-14 bg-primary/10 rounded-xl flex items-center justify-center mb-5">
+                            <i class="fas fa-rocket text-primary text-2xl"></i>
+                        </div>
+                        <h3 class="text-xl font-semibold text-white">Blazing-Fast Performance</h3>
+                        <p class="mt-2 text-gray-400">Our optimized index delivers complex visual search results in milliseconds.</p>
+                    </div>
+
+                    <div class="bg-dark-accent p-8 rounded-2xl border border-gray-800">
+                        <div class="mx-auto w-14 h-14 bg-primary/10 rounded-xl flex items-center justify-center mb-5">
+                            <i class="fas fa-plug text-primary text-2xl"></i>
+                        </div>
+                        <h3 class="text-xl font-semibold text-white">Plug & Play Integration</h3>
+                        <p class="mt-2 text-gray-400">Integrate Snyf's powerful search into your existing applications in minutes.</p>
+                    </div>
+
+                </div>
+            </section>
+
+            <section id="pricing" class="col-span-12 py-16 text-center">
+                <h2 class="text-4xl font-bold text-white mb-4">Simple, Transparent Pricing</h2>
+                <p class="text-lg text-gray-400">Choose the plan that's right for your scale.</p>
+                <div class="grid lg:grid-cols-3 gap-8 max-w-5xl mx-auto text-left mt-12">
+                    
+                    <div class="bg-dark-accent border border-gray-700 rounded-xl p-8">
+                        <h3 class="text-xl font-semibold text-white">Basic</h3>
+                        <p class="text-gray-400 mt-1">For new and growing projects.</p>
+                        <div class="my-6">
+                            <span class="text-5xl font-extrabold text-white">$25</span>
+                            <span class="text-gray-400">/mo</span>
+                        </div>
+                        <ul class="space-y-3 text-sm text-gray-400">
+                            <li class="flex items-start"><i class="fas fa-check-circle text-secondary mr-3 mt-1"></i><span><strong class="text-gray-200">100,000</strong> records included</span></li>
+                            <li class="flex items-start"><i class="fas fa-check-circle text-secondary mr-3 mt-1"></i><span><strong class="text-gray-200">50,000</strong> searches / month</span></li>
+                            <li class="flex items-start"><i class="fas fa-check-circle text-secondary mr-3 mt-1"></i><span>Full Support</span></li>
+                            <li class="flex items-start"><i class="fas fa-plus-circle text-gray-500 mr-3 mt-1"></i><span>$0.20 per 1,000 extra records</span></li>
+                            <li class="flex items-start"><i class="fas fa-plus-circle text-gray-500 mr-3 mt-1"></i><span>$0.30 per 1,000 extra searches</span></li>
+                        </ul>
+                    </div>
+
+                    <div class="bg-primary text-white rounded-xl p-8 shadow-2xl transform md:scale-110">
+                        <h3 class="text-xl font-semibold">Professional</h3>
+                        <p class="text-gray-300 mt-1">For established businesses.</p>
+                        <div class="my-6">
+                            <span class="text-5xl font-extrabold">$200</span>
+                            <span class="text-gray-300">/mo</span>
+                        </div>
+                        <ul class="space-y-3 text-sm text-gray-300">
+                            <li class="flex items-start"><i class="fas fa-check-circle text-white mr-3 mt-1"></i><span><strong class="text-white">1 Million</strong> records included</span></li>
+                            <li class="flex items-start"><i class="fas fa-check-circle text-white mr-3 mt-1"></i><span><strong class="text-white">250,000</strong> searches / month</span></li>
+                            <li class="flex items-start"><i class="fas fa-check-circle text-white mr-3 mt-1"></i><span>Priority Support</span></li>
+                            <li class="flex items-start"><i class="fas fa-plus-circle text-gray-400 mr-3 mt-1"></i><span>$0.20 per 1,000 extra records</span></li>
+                            <li class="flex items-start"><i class="fas fa-plus-circle text-gray-400 mr-3 mt-1"></i><span>$0.20 per 1,000 extra searches</span></li>
+                        </ul>
+                    </div>
+
+                    <div class="bg-dark-accent border border-gray-700 rounded-xl p-8">
+                        <h3 class="text-xl font-semibold text-white">Enterprise</h3>
+                        <p class="text-gray-400 mt-1">For large-scale applications.</p>
+                        <div class="my-6">
+                            <span class="text-5xl font-extrabold text-white">Custom</span>
+                        </div>
+                        <ul class="space-y-3 text-sm text-gray-400">
+                            <li class="flex items-start"><i class="fas fa-check-circle text-secondary mr-3 mt-1"></i><span>Custom record & search volume</span></li>
+                            <li class="flex items-start"><i class="fas fa-check-circle text-secondary mr-3 mt-1"></i><span>Dedicated Support & SLA</span></li>
+                            <li class="flex items-start"><i class="fas fa-check-circle text-secondary mr-3 mt-1"></i><span>Custom Integration Assistance</span></li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+            
+            <section id="waitlist" class="col-span-12 md:col-span-10 md:col-start-2 my-16 bg-gradient-to-r from-primary to-secondary rounded-2xl">
+                <div class="py-16 px-6 text-center text-white">
+                    <h2 class="text-3xl font-bold">Ready to Integrate Snyf?</h2>
+                    <p class="max-w-xl mx-auto mt-4 opacity-80">Sign up now to get your API key and manage your product catalog.</p>
+                    <a href="signup.html" class="inline-block mt-8 bg-white text-primary font-semibold py-3 px-8 rounded-lg hover:bg-gray-200 transition shadow-lg">Start Integrating Now</a>
+                </div>
+            </section>
+            
+            <footer class="col-span-12 border-t border-gray-800 mt-8 py-8 text-center text-gray-500">© 2025 Snyf. All rights reserved.</footer>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const lenis = new Lenis({ duration: 1.2 });
+            function raf(time) { lenis.raf(time); requestAnimationFrame(raf); }
+            requestAnimationFrame(raf);
+
+            const mobileMenuButton = document.getElementById('mobile-menu-button');
+            const mobileMenu = document.getElementById('mobile-menu');
+            const mobileMenuBackdrop = document.getElementById('mobile-menu-backdrop');
+            const mobileMenuClose = document.getElementById('mobile-menu-close');
+            const openMobileMenu = () => {
+                if (!mobileMenu || !mobileMenuBackdrop) return;
+                mobileMenu.classList.add('is-open');
+                mobileMenuBackdrop.classList.add('is-open');
+                mobileMenu.setAttribute('aria-hidden', 'false');
+                mobileMenuButton?.setAttribute('aria-expanded', 'true');
+                document.body.style.overflow = 'hidden';
+            };
+            const closeMobileMenu = () => {
+                if (!mobileMenu || !mobileMenuBackdrop) return;
+                mobileMenu.classList.remove('is-open');
+                mobileMenuBackdrop.classList.remove('is-open');
+                mobileMenu.setAttribute('aria-hidden', 'true');
+                mobileMenuButton?.setAttribute('aria-expanded', 'false');
+                document.body.style.overflow = '';
+            };
+            if(mobileMenuButton) mobileMenuButton.addEventListener('click', openMobileMenu);
+            if(mobileMenuClose) mobileMenuClose.addEventListener('click', closeMobileMenu);
+            if(mobileMenuBackdrop) mobileMenuBackdrop.addEventListener('click', closeMobileMenu);
+            document.addEventListener('keydown', (event) => {
+                if (event.key === 'Escape') closeMobileMenu();
+            });
+            
+            document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+                anchor.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    const targetId = this.getAttribute('href');
+                    if(targetId && targetId !== '#') lenis.scrollTo(targetId, { offset: -80 });
+                    closeMobileMenu();
+                });
+            });
+
+            const demoContainer = document.getElementById('demo');
+            if(demoContainer) {
+                const SNYF_API_URL = 'https://xydj4rm9eg.execute-api.us-east-1.amazonaws.com';
+                const SNYF_API_KEY = localStorage.getItem('snyfApiKey');
+                const SNYF_COLLECTION_ID = localStorage.getItem('snyfCollectionId');
+                
+                const snyfBtn = document.getElementById('snyf-search-btn'), 
+                      normalBtn = document.getElementById('normal-search-btn'),
+                      searchForm = document.getElementById('search-form'), 
+                      searchInput = document.getElementById('search-input'),
+                      resultsContainer = document.getElementById('results-container');
+                
+                let currentSearchMode = 'snyf';
+
+                const updateToggleUI = () => { 
+                    snyfBtn.textContent = 'Snyf AI Search'; 
+                    normalBtn.textContent = 'Normal Search'; 
+                    if (currentSearchMode === 'snyf') { 
+                        snyfBtn.className = 'px-6 py-2 text-sm font-semibold rounded-md transition-all duration-200 bg-gradient-to-r from-primary to-secondary text-white shadow-lg'; 
+                        normalBtn.className = 'px-6 py-2 text-sm font-semibold rounded-md transition-all duration-200 bg-transparent text-gray-400'; 
+                        searchInput.placeholder = "Describe an item (e.g., 'A loose cream top with wide sleeves')..."; 
+                    } else { 
+                        snyfBtn.className = 'px-6 py-2 text-sm font-semibold rounded-md transition-all duration-200 bg-transparent text-gray-400'; 
+                        normalBtn.className = 'px-6 py-2 text-sm font-semibold rounded-md transition-all duration-200 bg-dark-accent text-secondary shadow-lg'; 
+                        searchInput.placeholder = "Enter keywords (e.g., 'cream top wide sleeves')... "; 
+                    } 
+                };
+
+                const displayResults = (results) => { 
+                    resultsContainer.innerHTML = ''; 
+                    if (!results || results.length === 0) { 
+                        resultsContainer.innerHTML = `<p class="col-span-full text-center text-gray-400">No results found.</p>`; 
+                        return; 
+                    } 
+                    results.forEach(item => {
+                        const imageUrl = (item.image_urls && item.image_urls[0]) || item.image_url || 'https://via.placeholder.com/300x200?text=No+Image';
+                        const title = item.name || item.title || item.product_id || 'Untitled product';
+                        const card = `<div class="snyf-product-card group transition">
+                            <img src="${imageUrl}" alt="${title}" class="w-full h-40 object-cover">
+                            <div class="p-2"><h3 class="font-semibold text-xs text-gray-300 truncate group-hover:text-primary">${title}</h3></div>
+                        </div>`; 
+                        resultsContainer.insertAdjacentHTML('beforeend', card); 
+                    }); 
+                };
+
+                const performSearch = async (query) => { 
+                    resultsContainer.innerHTML = `<p class="col-span-full text-center text-gray-400">Searching...</p>`;
+                    
+                    if (currentSearchMode === 'snyf') {
+                        try {
+                            if (SNYF_API_KEY && SNYF_COLLECTION_ID) {
+                                const response = await fetch(`${SNYF_API_URL}/search`, {
+                                    method: 'POST',
+                                    headers: {
+                                        'Content-Type': 'application/json',
+                                        'x-api-key': SNYF_API_KEY
+                                    },
+                                    body: JSON.stringify({
+                                        collection_id: SNYF_COLLECTION_ID,
+                                        query,
+                                        top_k: 10
+                                    })
+                                });
+                                
+                                if (!response.ok) {
+                                    throw new Error(`Search API Error: ${response.status}`);
+                                }
+                                
+                                const data = await response.json();
+                                displayResults(data.results);
+                            } else {
+                                throw new Error('Sign up, save an API key, and choose a collection in the dashboard first.');
+                            }
+                        } catch (error) {
+                            console.error("Snyf Search Error:", error);
+                            resultsContainer.innerHTML = `<div class="col-span-full text-center py-10"><p class="text-red-500">Search failed: ${error.message}</p></div>`;
+                        }
+                    } else { 
+                        // --- UPDATED KEYWORD SEARCH LOGIC (GET REQUEST) ---
+                        try { 
+                            resultsContainer.innerHTML = `<div class="col-span-full text-center py-10"><p class="text-yellow-500">Keyword search is not available in the current backend. Use Snyf AI Search for your collection.</p></div>`;
+                            
+                        } catch (error) { 
+                            console.error(error);
+                            resultsContainer.innerHTML = `<div class="col-span-full text-center py-10"><p class="text-red-500">Search failed. (API/Server issue)</p></div>`; 
+                        } 
+                    }
+                };
+
+                const fetchInitialCatalog = async () => { 
+                    resultsContainer.innerHTML = `<p class="col-span-full text-center text-gray-400">Loading initial catalog items...</p>`; 
+                    if (SNYF_API_KEY && SNYF_COLLECTION_ID) {
+                        await performSearch("dress");
+                    } else {
+                        resultsContainer.innerHTML = `<p class="col-span-full text-center text-yellow-500">Sign up, upload a catalog, and return here to search your collection.</p>`; 
+                    }
+                };
+                
+                snyfBtn.addEventListener('click', () => { if (currentSearchMode === 'snyf') return; currentSearchMode = 'snyf'; updateToggleUI(); const query = searchInput.value.trim(); if (query) performSearch(query); });
+                normalBtn.addEventListener('click', () => { if (currentSearchMode === 'normal') return; currentSearchMode = 'normal'; updateToggleUI(); const query = searchInput.value.trim(); if (query) performSearch(query); });
+                searchForm.addEventListener('submit', (e) => { e.preventDefault(); const query = searchInput.value.trim(); if (query) performSearch(query); });
+                
+                updateToggleUI();
+                fetchInitialCatalog();
+            }
+        });
+    </script>
+</body>
+</html>

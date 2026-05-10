@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Snyf | Sign Up</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="styles.css">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#8B5CF6',
+                        secondary: '#F97316',
+                        dark: '#111827',
+                        "dark-accent": '#1F2937',
+                        light: '#F9FAFB',
+                    },
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                }
+            }
+        }
+    </script>
+    <style>
+    </style>
+</head>
+<body class="bg-dark text-gray-300 auth-shell">
+    <div class="auth-card p-8 m-4">
+        <div class="text-center mb-8">
+            <a href="index.html" class="inline-flex items-center"><i class="fas fa-braille text-primary text-2xl mr-2"></i><span class="text-2xl font-bold text-white">Snyf</span></a>
+            <p class="snyf-kicker justify-center mt-6"><i class="fas fa-wand-magic-sparkles"></i> Start searching</p>
+            <h2 class="text-2xl font-bold text-white mt-3">Create your Snyf account</h2>
+        </div>
+        
+        <form id="signup-form" class="space-y-4">
+            <div>
+                <label for="company_id_raw" class="block text-sm font-medium text-gray-400">Company Name</label>
+                <input type="text" id="company_id_raw" name="company_id_raw" required class="w-full px-4 py-3 rounded-lg bg-gray-900 border border-gray-700 text-white focus:ring-primary focus:border-primary placeholder-gray-500 focus:outline-none transition-colors">
+            </div>
+            <div>
+                <label for="email" class="block text-sm font-medium text-gray-400">Email Address</label>
+                <input type="email" id="email" name="email" required class="w-full px-4 py-3 rounded-lg bg-gray-900 border border-gray-700 text-white focus:ring-primary focus:border-primary placeholder-gray-500 focus:outline-none transition-colors">
+            </div>
+            <div>
+                <label for="password" class="block text-sm font-medium text-gray-400">Password</label>
+                <input type="password" id="password" name="password" required class="w-full px-4 py-3 rounded-lg bg-gray-900 border border-gray-700 text-white focus:ring-primary focus:border-primary placeholder-gray-500 focus:outline-none transition-colors">
+            </div>
+            
+            <p id="signup-error-msg" class="text-red-500 text-sm -mt-2 -mb-2 hidden"></p>
+
+            <button type="submit" id="signup-submit-btn" class="w-full bg-primary text-white font-semibold py-3 px-6 rounded-lg hover:bg-primary/90 transition">
+                <span>Sign Up</span>
+            </button>
+        </form>
+
+        <p class="text-center text-sm mt-6 text-gray-500">Already have an account? <a href="login.html" class="text-primary hover:text-primary/80 font-medium">Log In</a></p>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const SNYF_API_URL = 'https://xydj4rm9eg.execute-api.us-east-1.amazonaws.com';
+            
+            const signupForm = document.getElementById('signup-form');
+            const submitBtn = document.getElementById('signup-submit-btn');
+            const errorMsg = document.getElementById('signup-error-msg');
+            
+            // Input references
+            const companyInput = document.getElementById('company_id_raw');
+            const emailInput = document.getElementById('email');
+            const passwordInput = document.getElementById('password');
+
+            // --- 1. ENTER KEY LOGIC ---
+            // Helper function to handle enter key navigation
+            function handleEnterKey(event, nextElement) {
+                if (event.key === "Enter") {
+                    event.preventDefault(); // Stop form submit
+                    if (nextElement) {
+                        nextElement.focus();
+                    } else {
+                        // If no next element (password field), trigger submit
+                        submitBtn.click();
+                    }
+                }
+            }
+
+            companyInput.addEventListener('keydown', (e) => handleEnterKey(e, emailInput));
+            emailInput.addEventListener('keydown', (e) => handleEnterKey(e, passwordInput));
+            passwordInput.addEventListener('keydown', (e) => handleEnterKey(e, null)); // Null means submit
+
+            // --- 2. SUBMISSION LOGIC ---
+            if (!signupForm) return;
+
+            signupForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                
+                const btnSpan = submitBtn.querySelector('span') || submitBtn;
+                errorMsg.classList.add('hidden'); // Clear previous errors
+
+                // Get values
+                const company_id_raw = companyInput.value.trim();
+                const email = emailInput.value.trim();
+                const password = passwordInput.value;
+
+                // --- 3. FRONTEND VALIDATION ---
+                
+                // Company Name Validation (Alphanumeric only)
+                const alphanumericRegex = /^[a-zA-Z0-9]+$/;
+                if (!alphanumericRegex.test(company_id_raw)) {
+                    errorMsg.textContent = "Company name must contain letters and numbers only (no spaces).";
+                    errorMsg.classList.remove('hidden');
+                    companyInput.focus();
+                    return; // Stop execution
+                }
+
+                // Email Validation (Regex check)
+                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                if (!emailRegex.test(email)) {
+                    errorMsg.textContent = "Please enter a valid email address.";
+                    errorMsg.classList.remove('hidden');
+                    emailInput.focus();
+                    return; // Stop execution
+                }
+
+                btnSpan.textContent = 'Creating Account...';
+                submitBtn.disabled = true;
+
+                try {
+                    const response = await fetch(`${SNYF_API_URL}/auth/signup`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email, password })
+                    });
+
+                    const data = await response.json();
+
+                    if (!response.ok) {
+                        throw new Error(data.detail || data.message || data.errorMessage || 'Signup failed');
+                    }
+
+                    localStorage.setItem('snyfCustomer', JSON.stringify(data.customer));
+                    localStorage.setItem('snyfSession', JSON.stringify(data.session));
+                    localStorage.setItem('snyfRefreshToken', data.refresh_token);
+                    localStorage.setItem('snyfApiKey', data.api_key);
+                    localStorage.setItem('snyfCompanyName', company_id_raw);
+
+                    window.location.href = 'dashboard.html'; 
+
+                } catch (error) {
+                    errorMsg.textContent = error.message;
+                    errorMsg.classList.remove('hidden');
+                    
+                    btnSpan.textContent = 'Sign Up';
+                    submitBtn.disabled = false;
+                }
+            });
+        });
+    </script>
+</body>
+</html>

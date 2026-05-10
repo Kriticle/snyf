@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Snyf | Client Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="styles.css">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#8B5CF6',
+                        secondary: '#F97316',
+                        dark: '#111827',
+                        "dark-accent": '#1F2937',
+                        light: '#F9FAFB',
+                    },
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                }
+            }
+        }
+    </script>
+    <style>
+        .fade-enter { opacity: 0; transform: translateY(-5px); }
+        .fade-enter-active { opacity: 1; transform: translateY(0); transition: opacity 300ms, transform 300ms; }
+    </style>
+</head>
+<body class="bg-dark text-gray-300 min-h-screen flex flex-col">
+
+    <nav class="sticky top-0 bg-dark/80 backdrop-blur-lg z-50 border-b border-gray-800">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-16">
+                <a href="index.html" class="flex items-center group">
+                    <i class="fas fa-braille text-primary text-2xl mr-2 group-hover:text-white transition"></i>
+                    <span class="text-xl font-bold text-white">Snyf</span>
+                </a>
+                <div class="flex items-center space-x-4">
+                    <button onclick="logout()" class="bg-dark-accent border border-gray-700 text-gray-300 rounded-md px-4 py-2 text-sm font-medium hover:text-white hover:border-gray-500 transition">
+                        Log Out
+                    </button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex-grow w-full">
+        
+        <header class="py-10">
+            <p class="snyf-kicker mb-3"><i class="fas fa-layer-group"></i> Catalog command center</p>
+            <h1 id="welcome-header" class="text-4xl font-bold text-white">Welcome Back!</h1>
+            <p class="text-lg text-gray-400 mt-2">Upload, enrich, and search collections from one workspace.</p>
+        </header>
+
+        <div class="dashboard-grid">
+            
+            <div class="space-y-5">
+            <section id="custom-demo">
+                <div class="snyf-panel p-6 sm:p-8">
+                    <div class="mb-6">
+                        <p class="snyf-kicker mb-3"><i class="fas fa-search"></i> Search</p>
+                        <h2 class="text-3xl font-bold text-white">Ask for the look, not the SKU.</h2>
+                        <p class="text-gray-400 mt-2">Search your enriched products with customer-defined attributes and product imagery attached.</p>
+                    </div>
+                    
+                    <form id="dashboard-search-form" class="mb-8 relative">
+                        <div class="flex shadow-lg rounded-lg">
+                            <div class="relative flex-grow">
+                                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                    <i class="fas fa-search text-gray-500"></i>
+                                </div>
+                                <input type="text" id="dashboard-search-input" class="w-full pl-10 pr-4 py-3 text-gray-300 bg-gray-900 border border-r-0 border-gray-600 rounded-l-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent placeholder-gray-500 transition-all" placeholder="flowy beach look, structured blazer energy..." required>
+                            </div>
+                            <button type="submit" class="bg-primary text-white font-semibold px-6 py-3 rounded-r-lg hover:bg-primary/90 transition-colors border border-l-0 border-primary">
+                                Search
+                            </button>
+                        </div>
+                    </form>
+                    
+                    <div id="dashboard-results-container" class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-4 min-h-[260px]">
+                        </div>
+
+                    <div id="catalog-upload-prompt" class="col-span-full text-center mt-10 p-8 bg-gray-900/50 rounded-xl border border-dashed border-gray-700" style="display: none;">
+                        <i class="fas fa-cloud-upload-alt text-4xl text-gray-600 mb-4"></i>
+                        <p class="text-gray-300 font-medium">No catalog uploaded yet.</p>
+                        <p class="text-gray-500 text-sm mt-1">Upload a CSV to start searching your products.</p>
+                    </div>
+                </div>
+            </section>
+            </div>
+
+            <div class="space-y-5">
+            <section id="api-key">
+                <div class="snyf-panel p-6 relative overflow-hidden">
+                    
+                    <div class="flex flex-col justify-between items-start mb-6 gap-4">
+                        <div>
+                            <h2 class="text-2xl font-bold text-white flex items-center">
+                                <i class="fas fa-key text-secondary mr-3"></i>API Key
+                                <span class="ml-3 px-2 py-0.5 rounded text-xs font-bold bg-gray-700 text-gray-300 border border-gray-600 uppercase tracking-wide">Trial Plan</span>
+                            </h2>
+                            <p class="text-gray-400 text-sm mt-1">
+                                Limited to 1 API Key. <a href="index.html#pricing" class="text-primary hover:text-white transition underline decoration-dotted">Upgrade for higher limits.</a>
+                            </p>
+                        </div>
+                        
+                        <a href="index.html#pricing" class="flex items-center px-4 py-2 border border-primary/50 bg-primary/10 text-primary text-sm font-bold rounded hover:bg-primary hover:text-white transition shadow-sm">
+                            <i class="fas fa-bolt mr-2"></i> Upgrade to Pro
+                        </a>
+                    </div>
+                    
+                    <div class="flex items-center space-x-2 bg-gray-900 p-4 rounded-lg border border-gray-800 relative">
+                        <code id="api-key-display" class="flex-grow text-sm text-primary font-mono truncate select-all">Loading...</code>
+                        
+                        <button id="toggle-key-btn" class="text-gray-400 hover:text-white transition p-2 rounded hover:bg-gray-800" title="Show/Hide Key">
+                            <i class="fas fa-eye"></i>
+                        </button>
+
+                        <button id="copy-key-btn" class="text-gray-400 hover:text-white transition p-2 rounded hover:bg-gray-800" title="Copy Key">
+                            <i class="fas fa-copy"></i>
+                        </button>
+
+                        <div class="w-px h-6 bg-gray-700 mx-2"></div>
+
+                        <button id="generate-key-btn" class="bg-secondary text-white text-sm font-medium px-4 py-2 rounded hover:bg-secondary/90 transition shadow-lg shadow-orange-900/20 whitespace-nowrap min-w-[110px]">
+                            <i class="fas fa-magic mr-2"></i> Generate
+                        </button>
+                    </div>
+                    
+                    <div id="api-key-status" class="mt-3 text-sm h-5 font-medium transition-all duration-300 opacity-0 transform translate-y-[-5px]"></div>
+                </div>
+            </section>
+
+            <section id="catalog-tools">
+                <div class="snyf-panel p-6">
+                    <div class="grid grid-cols-1 gap-8">
+                        <div>
+                            <h2 class="text-2xl font-bold text-white flex items-center">
+                                <i class="fas fa-layer-group text-primary mr-3"></i>Collection
+                            </h2>
+                            <p class="text-gray-400 text-sm mt-1">Search and uploads are scoped to one collection at a time.</p>
+                            <div class="mt-5 flex flex-col sm:flex-row gap-3">
+                                <input type="text" id="collection-id-input" class="flex-grow px-4 py-3 rounded-lg bg-gray-900 border border-gray-700 text-white focus:ring-primary focus:border-primary placeholder-gray-500 focus:outline-none" placeholder="collection_123">
+                                <button id="save-collection-btn" class="bg-primary text-white font-semibold px-5 py-3 rounded-lg hover:bg-primary/90 transition">
+                                    Save
+                                </button>
+                            </div>
+                        </div>
+
+                        <form id="catalog-upload-form">
+                            <h2 class="text-2xl font-bold text-white flex items-center">
+                                <i class="fas fa-cloud-upload-alt text-secondary mr-3"></i>Upload CSV
+                            </h2>
+                            <p class="text-gray-400 text-sm mt-1">Send a catalog file to ingestion. The worker enriches each row with the collection attribute list.</p>
+                            <div class="mt-5 space-y-3">
+                                <input type="file" id="csv-file-input" accept=".csv,text/csv" class="block w-full text-sm text-gray-300 file:mr-4 file:rounded-md file:border-0 file:bg-primary file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-primary/90">
+                                <input type="text" id="attribute-list-id-input" class="w-full px-4 py-3 rounded-lg bg-gray-900 border border-gray-700 text-white focus:ring-primary focus:border-primary placeholder-gray-500 focus:outline-none" placeholder="attribute file name">
+                                <button type="submit" id="upload-submit-btn" class="w-full bg-secondary text-white font-semibold px-5 py-3 rounded-lg hover:bg-secondary/90 transition">
+                                    Upload Catalog
+                                </button>
+                                <p id="upload-status" class="text-sm h-5 font-medium"></p>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </section>
+            </div>
+        </div>
+    </div>
+
+    <footer class="border-t border-gray-800 mt-auto py-8 text-center text-gray-600 text-sm">
+        <p>© 2025 Snyf. All rights reserved.</p>
+    </footer>
+
+    <script>
+        // --- CONFIGURATION ---
+        const SNYF_API_URL = 'https://xydj4rm9eg.execute-api.us-east-1.amazonaws.com';
+        const DEFAULT_ATTRIBUTE_LIST_ID = 'smoke-fashion-v1';
+
+        // --- GLOBAL STATE ---
+        let g_session = JSON.parse(localStorage.getItem('snyfSession') || 'null');
+        let g_customer = JSON.parse(localStorage.getItem('snyfCustomer') || 'null');
+        let g_refreshToken = localStorage.getItem('snyfRefreshToken');
+        let g_apiKey = localStorage.getItem('snyfApiKey');
+        let g_collectionId = localStorage.getItem('snyfCollectionId');
+
+        let isKeyVisible = false;
+
+        // --- DOM ELEMENTS ---
+        const welcomeHeader = document.getElementById('welcome-header');
+        const apiKeyDisplay = document.getElementById('api-key-display');
+        const generateKeyBtn = document.getElementById('generate-key-btn');
+        const toggleKeyBtn = document.getElementById('toggle-key-btn');
+        const copyKeyBtn = document.getElementById('copy-key-btn');
+        const statusMsg = document.getElementById('api-key-status');
+        const collectionInput = document.getElementById('collection-id-input');
+        const saveCollectionBtn = document.getElementById('save-collection-btn');
+        const uploadForm = document.getElementById('catalog-upload-form');
+        const uploadSubmitBtn = document.getElementById('upload-submit-btn');
+        const uploadStatus = document.getElementById('upload-status');
+        const csvFileInput = document.getElementById('csv-file-input');
+        const attributeListIdInput = document.getElementById('attribute-list-id-input');
+        const resultsContainer = document.getElementById('dashboard-results-container');
+        const catalogUploadPrompt = document.getElementById('catalog-upload-prompt');
+        const searchForm = document.getElementById('dashboard-search-form');
+        const searchInput = document.getElementById('dashboard-search-input');
+
+        // --- AUTH CHECK ---
+        const logout = () => {
+            localStorage.removeItem('snyfCustomer');
+            localStorage.removeItem('snyfSession');
+            localStorage.removeItem('snyfRefreshToken');
+            window.location.href = 'login.html';
+        };
+
+        if (!g_session || !g_customer) {
+            logout();
+        }
+
+        // --- HELPER: SHOW STATUS MESSAGE ---
+        const showStatus = (msg, type = 'success') => {
+            statusMsg.textContent = msg;
+            statusMsg.className = 'mt-3 text-sm h-5 font-medium transition-all duration-300 transform translate-y-0 opacity-100';
+            
+            if (type === 'success') statusMsg.classList.add('text-green-400');
+            else if (type === 'error') statusMsg.classList.add('text-red-400');
+            else statusMsg.classList.add('text-blue-400');
+
+            setTimeout(() => {
+                statusMsg.classList.remove('opacity-100', 'translate-y-0');
+                statusMsg.classList.add('opacity-0', 'translate-y-[-5px]');
+            }, 4000);
+        };
+
+        const getMaskedKey = (key) => {
+            if (!key) return 'No API Key';
+            const prefix = key.substring(0, 8);
+            return `${prefix}••••••••••••••••••••••••••`;
+        };
+
+        const updateKeyDisplay = () => {
+            if (!g_apiKey) {
+                apiKeyDisplay.textContent = 'No API key generated yet.';
+                apiKeyDisplay.classList.add('text-gray-500');
+                apiKeyDisplay.classList.remove('text-primary');
+                toggleKeyBtn.style.display = 'none';
+                generateKeyBtn.innerHTML = '<i class="fas fa-magic mr-2"></i> Generate';
+                return;
+            }
+
+            apiKeyDisplay.classList.remove('text-gray-500');
+            apiKeyDisplay.classList.add('text-primary');
+            toggleKeyBtn.style.display = 'inline-block';
+            
+            generateKeyBtn.innerHTML = '<i class="fas fa-magic mr-2"></i> Generate';
+
+            if (isKeyVisible) {
+                apiKeyDisplay.textContent = g_apiKey;
+                toggleKeyBtn.innerHTML = '<i class="fas fa-eye-slash"></i>';
+            } else {
+                apiKeyDisplay.textContent = getMaskedKey(g_apiKey);
+                toggleKeyBtn.innerHTML = '<i class="fas fa-eye"></i>';
+            }
+        };
+
+        const ensureCollectionId = () => {
+            g_collectionId = collectionInput.value.trim();
+            if (!g_collectionId) {
+                throw new Error('Add a collection ID first.');
+            }
+            localStorage.setItem('snyfCollectionId', g_collectionId);
+            return g_collectionId;
+        };
+
+        const setUploadStatus = (message, type = 'info') => {
+            uploadStatus.textContent = message;
+            uploadStatus.className = 'text-sm min-h-5 font-medium';
+            if (type === 'success') uploadStatus.classList.add('text-green-400');
+            else if (type === 'error') uploadStatus.classList.add('text-red-400');
+            else uploadStatus.classList.add('text-blue-400');
+        };
+
+        const loadApiKeys = async () => {
+            if (!g_refreshToken) return;
+
+            const response = await fetch(`${SNYF_API_URL}/auth/api-keys`, {
+                headers: { 'Authorization': `Bearer ${g_refreshToken}` }
+            });
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.detail || data.message || 'Could not load API keys.');
+            }
+
+            const activeKey = (data.api_keys || []).find((key) => key.status === 'ACTIVE' && key.api_key);
+            if (activeKey) {
+                g_apiKey = activeKey.api_key;
+                localStorage.setItem('snyfApiKey', g_apiKey);
+                updateKeyDisplay();
+            }
+        };
+
+        // --- CORE ACTION: GENERATE KEY ---
+        const handleGenerateKey = async () => {
+            const originalHtml = generateKeyBtn.innerHTML;
+            generateKeyBtn.disabled = true;
+            generateKeyBtn.innerHTML = '<i class="fas fa-circle-notch fa-spin mr-2"></i>Generating...';
+
+            try {
+                const response = await fetch(`${SNYF_API_URL}/auth/api-keys`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${g_refreshToken}` }
+                });
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.detail || data.message || 'Could not generate API key.');
+                }
+
+                g_apiKey = data.api_key;
+                localStorage.setItem('snyfApiKey', g_apiKey);
+                isKeyVisible = true;
+                updateKeyDisplay();
+                showStatus('New API key generated.', 'success');
+            } catch (error) {
+                showStatus(error.message, 'error');
+            } finally {
+                generateKeyBtn.disabled = false;
+                generateKeyBtn.innerHTML = originalHtml;
+            }
+        };
+
+        // --- CORE ACTION: SEARCH ---
+        const performDashboardSearch = async (query) => {
+            if (!g_apiKey) {
+                resultsContainer.innerHTML = `<div class="col-span-full text-center py-10"><p class="text-yellow-500"><i class="fas fa-exclamation-circle mr-2"></i>Save your API key to enable search.</p></div>`;
+                return;
+            }
+
+            let collectionId;
+            try {
+                collectionId = ensureCollectionId();
+            } catch (error) {
+                resultsContainer.innerHTML = `<div class="col-span-full text-center py-10"><p class="text-yellow-500"><i class="fas fa-exclamation-circle mr-2"></i>${error.message}</p></div>`;
+                return;
+            }
+
+            resultsContainer.innerHTML = `<div class="col-span-full text-center py-10"><i class="fas fa-circle-notch fa-spin text-primary text-2xl"></i><p class="text-gray-400 mt-2">Searching your catalog...</p></div>`;
+            catalogUploadPrompt.style.display = 'none';
+
+            try {
+                const response = await fetch(`${SNYF_API_URL}/search`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-api-key': g_apiKey
+                    },
+                    body: JSON.stringify({
+                        collection_id: collectionId,
+                        query,
+                        top_k: 10
+                    })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.detail || data.message || `Search API Error: ${response.status}`);
+                }
+
+                populateCatalog(data.results, true);
+
+            } catch (error) {
+                console.error("Dashboard Search Error:", error);
+                resultsContainer.innerHTML = `<div class="col-span-full text-center py-10"><p class="text-red-500">Search failed: ${error.message}</p></div>`;
+            }
+        };
+
+        const populateCatalog = (items, isFirstLoad) => {
+            if (isFirstLoad) resultsContainer.innerHTML = '';
+
+            if (!items || items.length === 0) {
+                if (isFirstLoad) catalogUploadPrompt.style.display = 'block';
+                return;
+            }
+            
+            catalogUploadPrompt.style.display = 'none';
+
+            items.forEach(item => {
+                const imageUrl = (item.image_urls && item.image_urls[0]) || item.image_url || 'https://via.placeholder.com/300x400?text=No+Image';
+                const title = item.name || item.title || item.product_id || 'Untitled product';
+                const subtitleParts = [item.brand, item.category, item.price ? `${item.currency || ''} ${item.price}`.trim() : null].filter(Boolean);
+                const score = typeof item.score === 'number' ? `Score ${item.score.toFixed(3)}` : '';
+                const card = `
+                <div class="snyf-product-card group transition-all duration-300">
+                    <div class="relative h-48 overflow-hidden">
+                        <img src="${imageUrl}" alt="${title}" class="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-500">
+                        ${score ? `<span class="absolute left-2 top-2 snyf-chip">${score}</span>` : ''}
+                    </div>
+                    <div class="p-3">
+                        <h3 class="font-medium text-sm text-gray-200 truncate group-hover:text-primary transition-colors">${title}</h3>
+                        <p class="text-xs text-gray-500 mt-1 truncate">${subtitleParts.join(' · ') || score}</p>
+                        <p class="text-xs text-gray-600 mt-1 font-mono truncate">${item.product_id || item.productId || 'ID: --'}</p>
+                    </div>
+                </div>`;
+                resultsContainer.insertAdjacentHTML('beforeend', card);
+            });
+        };
+
+        // --- INITIALIZATION ---
+        const loadDashboardData = async () => {
+            const displayName = localStorage.getItem('snyfCompanyName') || g_customer?.email || 'there';
+            const defaultCollection = g_collectionId || `demo-${(g_customer?.customer_id || 'collection').slice(0, 8)}`;
+
+            welcomeHeader.textContent = `Welcome Back, ${displayName}!`;
+            collectionInput.value = defaultCollection;
+            attributeListIdInput.value = localStorage.getItem('snyfAttributeListId') || DEFAULT_ATTRIBUTE_LIST_ID;
+
+            if (!g_collectionId) {
+                g_collectionId = defaultCollection;
+                localStorage.setItem('snyfCollectionId', g_collectionId);
+            }
+
+            updateKeyDisplay();
+            try {
+                await loadApiKeys();
+            } catch (error) {
+                showStatus(error.message, 'error');
+            }
+
+            if (g_apiKey) {
+                resultsContainer.innerHTML = `<div class="col-span-full text-center py-10"><p class="text-gray-500">Upload a CSV, then search this collection.</p></div>`;
+            } else {
+                resultsContainer.innerHTML = `<div class="col-span-full text-center py-10"><p class="text-gray-500">Save the API key from signup to upload and search.</p></div>`;
+            }
+        };
+
+        const uploadCatalog = async () => {
+            if (!g_apiKey) throw new Error('Save your API key first.');
+            const collectionId = ensureCollectionId();
+            const csvFile = csvFileInput.files[0];
+
+            if (!csvFile) throw new Error('Choose a CSV file first.');
+
+            const attributeListId = attributeListIdInput.value.trim();
+
+            if (!attributeListId) {
+                throw new Error('Attribute list file name is required.');
+            }
+
+            localStorage.setItem('snyfAttributeListId', attributeListId);
+
+            const formData = new FormData();
+            formData.append('csv_file', csvFile);
+            formData.append('attribute_list_id', attributeListId);
+            formData.append('process_now', 'false');
+
+            const response = await fetch(`${SNYF_API_URL}/collections/${encodeURIComponent(collectionId)}/upload`, {
+                method: 'POST',
+                headers: { 'x-api-key': g_apiKey },
+                body: formData
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.detail || data.message || `Upload failed: ${response.status}`);
+            }
+
+            return data;
+        };
+
+        const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+        const pollIngestionJob = async (jobId, expectedRows) => {
+            if (!jobId) return null;
+
+            for (let attempt = 0; attempt < 60; attempt += 1) {
+                const response = await fetch(`${SNYF_API_URL}/ingestion-jobs/${encodeURIComponent(jobId)}`, {
+                    headers: { 'x-api-key': g_apiKey }
+                });
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.detail || data.message || 'Could not check catalog status.');
+                }
+
+                const acceptedRows = data.accepted_rows ?? expectedRows;
+                const enrichedRows = data.enriched_rows ?? 0;
+                const failedRows = data.failed_rows ?? 0;
+
+                if (data.status === 'READY') {
+                    setUploadStatus(`Catalog ready. ${enrichedRows}/${acceptedRows} products indexed.`, 'success');
+                    resultsContainer.innerHTML = `<div class="col-span-full text-center py-10"><p class="text-green-400">Catalog ready. Search this collection now.</p></div>`;
+                    return data;
+                }
+
+                if (data.status === 'COMPLETED_WITH_ERRORS') {
+                    setUploadStatus(`Catalog finished with ${failedRows} failed product(s). ${enrichedRows}/${acceptedRows} indexed.`, 'error');
+                    resultsContainer.innerHTML = `<div class="col-span-full text-center py-10"><p class="text-yellow-400">Some products failed enrichment. Search will use the indexed products.</p></div>`;
+                    return data;
+                }
+
+                setUploadStatus(`Catalog ${data.status.toLowerCase()}. ${enrichedRows}/${acceptedRows} products indexed.`, 'info');
+                await sleep(5000);
+            }
+
+            setUploadStatus('Catalog is still processing. Try search again in a minute.', 'info');
+            return null;
+        };
+
+        document.addEventListener('DOMContentLoaded', () => {
+            loadDashboardData();
+            generateKeyBtn.addEventListener('click', handleGenerateKey);
+            saveCollectionBtn.addEventListener('click', () => {
+                try {
+                    ensureCollectionId();
+                    showStatus('Collection saved.', 'success');
+                } catch (error) {
+                    showStatus(error.message, 'error');
+                }
+            });
+            uploadForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                uploadSubmitBtn.disabled = true;
+                uploadSubmitBtn.innerHTML = '<i class="fas fa-circle-notch fa-spin mr-2"></i>Uploading...';
+                setUploadStatus('Uploading catalog...', 'info');
+
+                try {
+                    const result = await uploadCatalog();
+                    const rowCount = result.accepted_rows ?? result.row_count ?? 'CSV';
+                    const rejectedRows = result.rejected_rows ?? 0;
+                    if (rowCount === 0 && rejectedRows > 0) {
+                        const firstIssue = (result.issues || [])[0];
+                        const issueText = firstIssue ? `${firstIssue.field}: ${firstIssue.message}` : 'No rows were accepted.';
+                        setUploadStatus(`Upload rejected ${rejectedRows} row(s). ${issueText}`, 'error');
+                        resultsContainer.innerHTML = `<div class="col-span-full text-center py-10"><p class="text-red-400">No rows were queued. Check the upload error above and try again.</p></div>`;
+                    } else {
+                        setUploadStatus(`Upload accepted. ${rowCount} rows queued. Checking enrichment status...`, 'info');
+                        resultsContainer.innerHTML = `<div class="col-span-full text-center py-10"><i class="fas fa-circle-notch fa-spin text-primary text-2xl"></i><p class="text-gray-400 mt-2">Enriching catalog...</p></div>`;
+                        pollIngestionJob(result.job_id, rowCount).catch((error) => {
+                            setUploadStatus(error.message, 'error');
+                        });
+                    }
+                } catch (error) {
+                    setUploadStatus(error.message, 'error');
+                } finally {
+                    uploadSubmitBtn.disabled = false;
+                    uploadSubmitBtn.innerHTML = 'Upload Catalog';
+                }
+            });
+            toggleKeyBtn.addEventListener('click', () => { isKeyVisible = !isKeyVisible; updateKeyDisplay(); });
+            copyKeyBtn.addEventListener('click', () => {
+                if(g_apiKey) {
+                    navigator.clipboard.writeText(g_apiKey).then(() => {
+                        const originalHtml = copyKeyBtn.innerHTML;
+                        copyKeyBtn.innerHTML = '<i class="fas fa-check text-green-400"></i>';
+                        showStatus('Key copied to clipboard', 'info');
+                        setTimeout(() => copyKeyBtn.innerHTML = originalHtml, 1500);
+                    });
+                }
+            });
+            searchForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const query = searchInput.value.trim();
+                if (query) performDashboardSearch(query);
+            });
+        });
+
+    </script>
+</body>
+</html>

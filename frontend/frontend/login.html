@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Snyf | Log In</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="styles.css">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#8B5CF6',
+                        secondary: '#F97316',
+                        dark: '#111827',
+                        "dark-accent": '#1F2937',
+                        light: '#F9FAFB',
+                    },
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                }
+            }
+        }
+    </script>
+    <style>
+    </style>
+</head>
+<body class="bg-dark text-gray-300 auth-shell">
+    <div class="auth-card p-8 m-4">
+        <div class="text-center mb-8">
+            <a href="index.html" class="inline-flex items-center"><i class="fas fa-braille text-primary text-2xl mr-2"></i><span class="text-2xl font-bold text-white">Snyf</span></a>
+            <p class="snyf-kicker justify-center mt-6"><i class="fas fa-lock"></i> Secure workspace</p>
+            <h2 class="text-2xl font-bold text-white mt-3">Log in to your dashboard</h2>
+        </div>
+        
+        <form id="login-form" class="space-y-4">
+            <div>
+                <label for="email" class="block text-sm font-medium text-gray-400">Email Address</label>
+                <input type="email" id="email" name="email" required class="w-full px-4 py-3 rounded-lg bg-gray-900 border border-gray-700 text-white focus:ring-primary focus:border-primary placeholder-gray-500 focus:outline-none">
+            </div>
+            <div>
+                <label for="password" class="block text-sm font-medium text-gray-400">Password</label>
+                <input type="password" id="password" name="password" required class="w-full px-4 py-3 rounded-lg bg-gray-900 border border-gray-700 text-white focus:ring-primary focus:border-primary placeholder-gray-500 focus:outline-none">
+            </div>
+            
+            <p id="login-error-msg" class="text-red-500 text-sm -mt-2 -mb-2 hidden"></p>
+            
+            <button type="submit" id="login-submit-btn" class="w-full bg-primary text-white font-semibold py-3 px-6 rounded-lg hover:bg-primary/90 transition">
+                <span>Log In</span>
+            </button>
+        </form>
+
+        <p class="text-center text-sm mt-6 text-gray-500">Don't have an account? <a href="signup.html" class="text-primary hover:text-primary/80 font-medium">Sign Up</a></p>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const SNYF_API_URL = 'https://xydj4rm9eg.execute-api.us-east-1.amazonaws.com';
+            
+            const loginForm = document.getElementById('login-form');
+            const submitBtn = document.getElementById('login-submit-btn');
+            const errorMsg = document.getElementById('login-error-msg');
+
+            if (!loginForm) return;
+
+            loginForm.addEventListener('submit', async (e) => {
+                e.preventDefault(); // Stop the form from submitting normally
+                
+                const btnSpan = submitBtn.querySelector('span') || submitBtn;
+
+                // Show loading state
+                btnSpan.textContent = 'Logging In...';
+                submitBtn.disabled = true;
+                errorMsg.classList.add('hidden');
+
+                const email = document.getElementById('email').value;
+                const password = document.getElementById('password').value;
+
+                try {
+                    const response = await fetch(`${SNYF_API_URL}/auth/login`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email, password })
+                    });
+
+                    const data = await response.json();
+
+                    if (!response.ok) {
+                        throw new Error(data.detail || data.message || data.errorMessage || 'Login failed');
+                    }
+
+                    localStorage.setItem('snyfCustomer', JSON.stringify(data.customer));
+                    localStorage.setItem('snyfSession', JSON.stringify(data.session));
+                    localStorage.setItem('snyfRefreshToken', data.refresh_token);
+                    window.location.href = 'dashboard.html';
+
+                } catch (error) {
+                    // Show error message
+                    errorMsg.textContent = error.message;
+                    errorMsg.classList.remove('hidden');
+                    
+                    // Reset button
+                    btnSpan.textContent = 'Log In';
+                    submitBtn.disabled = false;
+                }
+            });
+        });
+    </script>
+</body>
+</html>

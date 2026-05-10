@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Snyf API Documentation</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="styles.css">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#8B5CF6',
+                        secondary: '#F97316',
+                        dark: '#111827',
+                        "dark-accent": '#1F2937'
+                    },
+                    fontFamily: { sans: ['Inter', 'sans-serif'] }
+                }
+            }
+        }
+    </script>
+    <style>
+        pre { white-space: pre-wrap; word-break: break-word; }
+    </style>
+</head>
+<body class="bg-gray-950 text-gray-300 min-h-screen">
+    <nav class="sticky top-0 z-40 border-b border-gray-800 bg-gray-950/90 backdrop-blur">
+        <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <a href="index.html" class="flex items-center">
+                <i class="fas fa-braille text-primary text-2xl mr-2"></i>
+                <span class="text-xl font-bold text-white">Snyf API</span>
+            </a>
+            <div class="flex items-center gap-4 text-sm">
+                <a href="dashboard.html" class="text-gray-400 hover:text-white">Dashboard</a>
+                <a href="signup.html" class="bg-primary text-white rounded-md px-4 py-2 font-semibold hover:bg-primary/90">Sign Up</a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+        <header class="mb-10">
+            <p class="snyf-kicker mb-4"><i class="fas fa-code"></i> API documentation</p>
+            <h1 class="text-4xl font-bold text-white">Snyf API Reference</h1>
+            <p class="text-gray-400 mt-3 max-w-3xl">Use these endpoints to create accounts, manage API keys, upload catalogs, poll ingestion jobs, and search enriched collections.</p>
+            <div class="mt-5 rounded-lg border border-gray-800 bg-gray-900 p-4 font-mono text-sm text-gray-200">https://xydj4rm9eg.execute-api.us-east-1.amazonaws.com</div>
+        </header>
+
+        <section class="mb-10 rounded-lg border border-gray-800 bg-gray-900 p-6">
+            <h2 class="text-2xl font-bold text-white">Authentication</h2>
+            <p class="mt-2 text-gray-400">Signup and login use email/password. Catalog upload, job polling, and search use the customer API key in the <code class="text-primary">x-api-key</code> header.</p>
+
+            <div class="mt-6 grid lg:grid-cols-2 gap-5">
+                <div>
+                    <div class="flex items-center gap-3 mb-2">
+                        <span class="rounded bg-green-900 px-2 py-1 text-xs font-bold text-green-300">POST</span>
+                        <h3 class="font-semibold text-white">/auth/signup</h3>
+                    </div>
+                    <pre class="rounded bg-gray-950 p-4 text-sm text-gray-200"><code>curl -sS -X POST "$API_URL/auth/signup" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "customer@example.com",
+    "password": "password123"
+  }'</code></pre>
+                    <p class="mt-3 text-sm text-gray-400">Returns <code class="text-primary">customer</code>, <code class="text-primary">session</code>, <code class="text-primary">refresh_token</code>, <code class="text-primary">api_key</code>, and <code class="text-primary">api_key_id</code>.</p>
+                </div>
+
+                <div>
+                    <div class="flex items-center gap-3 mb-2">
+                        <span class="rounded bg-green-900 px-2 py-1 text-xs font-bold text-green-300">POST</span>
+                        <h3 class="font-semibold text-white">/auth/login</h3>
+                    </div>
+                    <pre class="rounded bg-gray-950 p-4 text-sm text-gray-200"><code>curl -sS -X POST "$API_URL/auth/login" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "customer@example.com",
+    "password": "password123"
+  }'</code></pre>
+                    <p class="mt-3 text-sm text-gray-400">Returns <code class="text-primary">customer</code>, <code class="text-primary">session</code>, and <code class="text-primary">refresh_token</code>.</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="mb-10 rounded-lg border border-gray-800 bg-gray-900 p-6">
+            <h2 class="text-2xl font-bold text-white">API Keys</h2>
+            <p class="mt-2 text-gray-400">Use the login <code class="text-primary">refresh_token</code> as a bearer token for API-key management.</p>
+
+            <div class="mt-6 grid lg:grid-cols-2 gap-5">
+                <div>
+                    <div class="flex items-center gap-3 mb-2">
+                        <span class="rounded bg-blue-900 px-2 py-1 text-xs font-bold text-blue-400">GET</span>
+                        <h3 class="font-semibold text-white">/auth/api-keys</h3>
+                    </div>
+                    <pre class="rounded bg-gray-950 p-4 text-sm text-gray-200"><code>curl -sS "$API_URL/auth/api-keys" \
+  -H "Authorization: Bearer $REFRESH_TOKEN"</code></pre>
+                </div>
+
+                <div>
+                    <div class="flex items-center gap-3 mb-2">
+                        <span class="rounded bg-green-900 px-2 py-1 text-xs font-bold text-green-300">POST</span>
+                        <h3 class="font-semibold text-white">/auth/api-keys</h3>
+                    </div>
+                    <pre class="rounded bg-gray-950 p-4 text-sm text-gray-200"><code>curl -sS -X POST "$API_URL/auth/api-keys" \
+  -H "Authorization: Bearer $REFRESH_TOKEN"</code></pre>
+                </div>
+            </div>
+        </section>
+
+        <section id="upload" class="mb-10 rounded-lg border border-gray-800 bg-gray-900 p-6">
+            <div class="flex items-center gap-3">
+                <span class="rounded bg-green-900 px-2 py-1 text-xs font-bold text-green-300">POST</span>
+                <h2 class="text-2xl font-bold text-white">/collections/{collection_id}/upload</h2>
+            </div>
+            <p class="mt-2 text-gray-400">Uploads a catalog CSV to one collection and queues accepted rows for enrichment.</p>
+
+            <pre class="mt-5 rounded bg-gray-950 p-4 text-sm text-gray-200"><code>curl -sS -X POST "$API_URL/collections/coll_ss25/upload" \
+  -H "x-api-key: $API_KEY" \
+  -F "csv_file=@catalog.csv" \
+  -F "attribute_list_id=fashion-v1" \
+  -F "process_now=false"</code></pre>
+
+            <div class="mt-5 overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead class="text-left text-gray-400 border-b border-gray-800">
+                        <tr><th class="py-2">Input</th><th class="py-2">Required</th><th class="py-2">Notes</th></tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-800">
+                        <tr><td class="py-2 font-mono text-primary">csv_file</td><td class="py-2">Yes</td><td class="py-2">CSV file with product rows.</td></tr>
+                        <tr><td class="py-2 font-mono text-primary">attribute_list_id</td><td class="py-2">Yes</td><td class="py-2">Attribute-list file name, not an S3 URI.</td></tr>
+                        <tr><td class="py-2 font-mono text-primary">process_now</td><td class="py-2">No</td><td class="py-2">Use false for queued production ingestion.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <p class="mt-5 text-sm text-gray-400">Required CSV columns: <code class="text-primary">product_id</code>, <code class="text-primary">name</code>, <code class="text-primary">image_urls</code>. Optional columns: <code class="text-primary">collection_id</code>, <code class="text-primary">category</code>, <code class="text-primary">description</code>, <code class="text-primary">price</code>, <code class="text-primary">currency</code>, <code class="text-primary">brand</code>, <code class="text-primary">attributes</code>, <code class="text-primary">_deleted</code>.</p>
+
+            <h3 class="font-semibold text-white mt-6 mb-2">Response</h3>
+            <pre class="rounded bg-gray-950 p-4 text-sm text-gray-200"><code>{
+  "job_id": "job_coll_ss25_a1b2c3d4e5f6",
+  "accepted_rows": 3,
+  "rejected_rows": 0,
+  "warnings": 0,
+  "status": "QUEUED",
+  "issues": []
+}</code></pre>
+        </section>
+
+        <section class="mb-10 rounded-lg border border-gray-800 bg-gray-900 p-6">
+            <div class="flex items-center gap-3">
+                <span class="rounded bg-blue-900 px-2 py-1 text-xs font-bold text-blue-400">GET</span>
+                <h2 class="text-2xl font-bold text-white">/ingestion-jobs/{job_id}</h2>
+            </div>
+            <p class="mt-2 text-gray-400">Polls an upload job until products become searchable.</p>
+
+            <pre class="mt-5 rounded bg-gray-950 p-4 text-sm text-gray-200"><code>curl -sS "$API_URL/ingestion-jobs/$JOB_ID" \
+  -H "x-api-key: $API_KEY"</code></pre>
+
+            <h3 class="font-semibold text-white mt-6 mb-2">Response</h3>
+            <pre class="rounded bg-gray-950 p-4 text-sm text-gray-200"><code>{
+  "job_id": "job_coll_ss25_a1b2c3d4e5f6",
+  "status": "READY",
+  "accepted_rows": 3,
+  "queued_rows": 0,
+  "processing_rows": 0,
+  "enriched_rows": 3,
+  "failed_rows": 0,
+  "deleted_rows": 0,
+  "products": [
+    {
+      "collection_id": "coll_ss25",
+      "product_id": "prod_001",
+      "name": "Linen Wrap Dress",
+      "status": "ENRICHED"
+    }
+  ]
+}</code></pre>
+
+            <div class="flex items-center gap-3 mt-6">
+                <span class="rounded bg-blue-900 px-2 py-1 text-xs font-bold text-blue-400">GET</span>
+                <h3 class="font-semibold text-white">/ingestion-jobs/{job_id}/errors</h3>
+            </div>
+            <pre class="mt-3 rounded bg-gray-950 p-4 text-sm text-gray-200"><code>curl -sS "$API_URL/ingestion-jobs/$JOB_ID/errors" \
+  -H "x-api-key: $API_KEY"</code></pre>
+        </section>
+
+        <section id="search" class="mb-10 rounded-lg border border-gray-800 bg-gray-900 p-6">
+            <div class="flex items-center gap-3">
+                <span class="rounded bg-green-900 px-2 py-1 text-xs font-bold text-green-300">POST</span>
+                <h2 class="text-2xl font-bold text-white">/search</h2>
+            </div>
+            <p class="mt-2 text-gray-400">Searches one collection and returns ranked product results with image URLs.</p>
+
+            <pre class="mt-5 rounded bg-gray-950 p-4 text-sm text-gray-200"><code>curl -sS -X POST "$API_URL/search" \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: $API_KEY" \
+  -d '{
+    "collection_id": "coll_ss25",
+    "query": "flowy beach wedding look",
+    "top_k": 5
+  }'</code></pre>
+
+            <div class="mt-5 overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead class="text-left text-gray-400 border-b border-gray-800">
+                        <tr><th class="py-2">Field</th><th class="py-2">Required</th><th class="py-2">Notes</th></tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-800">
+                        <tr><td class="py-2 font-mono text-primary">collection_id</td><td class="py-2">Yes</td><td class="py-2">Must belong to the API-key customer.</td></tr>
+                        <tr><td class="py-2 font-mono text-primary">query</td><td class="py-2">Yes</td><td class="py-2">Natural-language product search.</td></tr>
+                        <tr><td class="py-2 font-mono text-primary">top_k</td><td class="py-2">No</td><td class="py-2">Defaults to 20. Maximum is 100.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <h3 class="font-semibold text-white mt-6 mb-2">Response</h3>
+            <pre class="rounded bg-gray-950 p-4 text-sm text-gray-200"><code>{
+  "collection_id": "coll_ss25",
+  "query": "flowy beach wedding look",
+  "results": [
+    {
+      "product_id": "prod_001",
+      "name": "Linen Wrap Dress",
+      "image_urls": ["https://cdn.example.com/prod_001.jpg"],
+      "category": "dress",
+      "brand": "Example",
+      "price": 148,
+      "currency": "USD",
+      "score": 0.84,
+      "feature_scores": {
+        "occasion": 0.91,
+        "silhouette": 0.78
+      },
+      "enriched_attrs": {
+        "occasion": "beach wedding",
+        "silhouette": "flowy"
+      }
+    }
+  ],
+  "metrics": {
+    "api_total_ms": 823.41,
+    "search": {
+      "total_ms": 790.0,
+      "steps_ms": {
+        "extract_query_attributes": 488.17,
+        "embed_query": 96.31,
+        "rerank_candidates": 0.42
+      }
+    }
+  }
+}</code></pre>
+        </section>
+
+        <section class="mb-10 rounded-lg border border-gray-800 bg-gray-900 p-6">
+            <h2 class="text-2xl font-bold text-white">Errors And Limits</h2>
+            <div class="mt-5 grid md:grid-cols-2 gap-5">
+                <div>
+                    <h3 class="font-semibold text-white mb-2">Error Shape</h3>
+                    <pre class="rounded bg-gray-950 p-4 text-sm text-gray-200"><code>{
+  "detail": "Invalid email or password."
+}</code></pre>
+                </div>
+                <div>
+                    <h3 class="font-semibold text-white mb-2">Plan Limit Error</h3>
+                    <pre class="rounded bg-gray-950 p-4 text-sm text-gray-200"><code>{
+  "detail": "search_requests_per_month exceeded for FREE plan. Please upgrade your plan."
+}</code></pre>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="border-t border-gray-800 py-8 text-center text-sm text-gray-600">
+        © 2025 Snyf. All rights reserved.
+    </footer>
+</body>
+</html>
