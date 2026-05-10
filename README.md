@@ -452,14 +452,15 @@ The deployed marketing-site demo must not include customer API keys in browser c
 ```bash
 curl -sS -X POST "$SEARCH_URL/search/demo" \
   -H "content-type: application/json" \
-  -d '{"query":"flowy beach wedding look","top_k":5}'
+  -d '{"query":"flowy beach wedding look"}'
 
 curl -sS -X POST "$SEARCH_URL/search/demo/keyword" \
   -H "content-type: application/json" \
-  -d '{"query":"linen dress","top_k":5}'
+  -d '{"query":"linen dress"}'
 ```
 
-These endpoints do not accept `collection_id` or `x-api-key`; protected customer apps should use `/search` and `/search/keyword`.
+These endpoints do not accept `collection_id`, `top_k`, or `x-api-key`; protected customer apps should use `/search` and `/search/keyword`.
+They are still rate limited per client and return `429` if the public demo is overused.
 
 ## Search Flow
 

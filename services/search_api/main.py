@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import time
+from collections import defaultdict, deque
 from dataclasses import asdict
 
 from shared.models import SearchRequest
@@ -17,11 +18,11 @@ from shared.storage import JsonStore
 logger = logging.getLogger(__name__)
 
 try:
-    from fastapi import FastAPI, Header, HTTPException
+    from fastapi import FastAPI, Header, HTTPException, Request
     from pydantic import BaseModel
 except ImportError:  # pragma: no cover - optional runtime adapter
     FastAPI = None
-    Header = HTTPException = None
+    Header = HTTPException = Request = None
     BaseModel = object
     Field = None
 
@@ -35,7 +36,9 @@ if FastAPI is not None:
 
     class DemoSearchPayload(BaseModel):
         query: str
-        top_k: int = 10
+
+        class Config:
+            extra = "forbid"
 
 
 def create_app(data_dir: str = "data"):
@@ -47,6 +50,7 @@ def create_app(data_dir: str = "data"):
     service = SearchService(store)
     auth_service = AuthService(store)
     usage_service = UsageService(store)
+    demo_rate_limiter = DemoRateLimiter.from_environment()
 
     @app.get("/health")
     def health():
@@ -77,17 +81,21 @@ def create_app(data_dir: str = "data"):
         )
 
     @app.post("/search/demo")
-    def demo_search(payload: DemoSearchPayload):
+    def demo_search(payload: DemoSearchPayload, request: Request):
         return execute_demo_search(
             payload=payload,
+            request=request,
+            rate_limiter=demo_rate_limiter,
             search_fn=service.search_with_metrics,
             metric_name="demo_search",
         )
 
     @app.post("/search/demo/keyword")
-    def demo_keyword_search(payload: DemoSearchPayload):
+    def demo_keyword_search(payload: DemoSearchPayload, request: Request):
         return execute_demo_search(
             payload=payload,
+            request=request,
+            rate_limiter=demo_rate_limiter,
             search_fn=service.keyword_search_with_metrics,
             metric_name="demo_keyword_search",
         )
@@ -167,23 +175,32 @@ def execute_search(
     return {"results": [serialize(result) for result in results], "metrics": metrics}
 
 
-def execute_demo_search(*, payload, search_fn, metric_name: str):
+def execute_demo_search(*, payload, request: Request, rate_limiter, search_fn, metric_name: str):
     demo_collection_id = os.getenv("DEMO_COLLECTION_ID", "live_smoke_1778332579")
-    top_k = min(payload.top_k, 10)
+    demo_top_k = int(os.getenv("DEMO_TOP_K", "10"))
+    client_id = demo_client_id(request)
+    try:
+        rate_limiter.check(client_id)
+        validate_top_k(demo_top_k)
+    except DemoRateLimitError as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     request = SearchRequest(
         collection_id=demo_collection_id,
         query=payload.query,
-        top_k=top_k,
+        top_k=demo_top_k,
     )
     try:
         results, search_metrics = search_fn(request)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     logger.info(
-        "%s collection_id=%s top_k=%s metrics=%s",
+        "%s client_id=%s collection_id=%s top_k=%s metrics=%s",
         metric_name,
+        client_id,
         demo_collection_id,
-        top_k,
+        demo_top_k,
         json.dumps(search_metrics.to_dict(), sort_keys=True),
     )
     return {
@@ -191,6 +208,41 @@ def execute_demo_search(*, payload, search_fn, metric_name: str):
         "results": [serialize(result) for result in results],
         "metrics": {"search": search_metrics.to_dict()},
     }
+
+
+class DemoRateLimitError(ValueError):
+    pass
+
+
+class DemoRateLimiter:
+    def __init__(self, limit: int, window_seconds: int = 60) -> None:
+        self.limit = limit
+        self.window_seconds = window_seconds
+        self.requests: dict[str, deque[float]] = defaultdict(deque)
+
+    @classmethod
+    def from_environment(cls) -> "DemoRateLimiter":
+        limit = int(os.getenv("DEMO_RATE_LIMIT_PER_MINUTE", "30"))
+        return cls(limit=max(limit, 1))
+
+    def check(self, client_id: str) -> None:
+        now = time.monotonic()
+        bucket = self.requests[client_id]
+        cutoff = now - self.window_seconds
+        while bucket and bucket[0] < cutoff:
+            bucket.popleft()
+        if len(bucket) >= self.limit:
+            raise DemoRateLimitError("Demo search rate limit exceeded. Please try again in a minute.")
+        bucket.append(now)
+
+
+def demo_client_id(request: Request) -> str:
+    forwarded_for = request.headers.get("x-forwarded-for")
+    if forwarded_for:
+        return forwarded_for.split(",", 1)[0].strip()
+    if request.client and request.client.host:
+        return request.client.host
+    return "unknown"
 
 
 app = create_app() if FastAPI is not None else None

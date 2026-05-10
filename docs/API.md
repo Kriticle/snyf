@@ -451,15 +451,15 @@ Request:
 
 ```json
 {
-  "query": "linen beach dress",
-  "top_k": 10
+  "query": "linen beach dress"
 }
 ```
 
 Notes:
 
-- These endpoints do not accept `collection_id` or `x-api-key`.
-- The backend uses `DEMO_COLLECTION_ID` and caps `top_k` at `10`.
+- These endpoints do not accept `collection_id`, `top_k`, or `x-api-key`.
+- The backend uses `DEMO_COLLECTION_ID` and a fixed server-side `DEMO_TOP_K`.
+- Public demo requests are still rate limited per client and return `429` when exceeded.
 - Customer products must use protected `/search` and `/search/keyword`.
 
 ## Plan Limits

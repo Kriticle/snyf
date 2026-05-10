@@ -304,6 +304,21 @@
                       resultsContainer = document.getElementById('results-container');
                 
                 let currentSearchMode = 'snyf';
+                const demoRateLimit = {
+                    maxRequests: 8,
+                    windowMs: 60 * 1000,
+                    timestamps: []
+                };
+
+                const canSearchDemo = () => {
+                    const now = Date.now();
+                    demoRateLimit.timestamps = demoRateLimit.timestamps.filter(timestamp => now - timestamp < demoRateLimit.windowMs);
+                    if (demoRateLimit.timestamps.length >= demoRateLimit.maxRequests) {
+                        return false;
+                    }
+                    demoRateLimit.timestamps.push(now);
+                    return true;
+                };
 
                 const updateToggleUI = () => { 
                     snyfBtn.textContent = 'Snyf AI Search'; 
@@ -337,6 +352,11 @@
                 };
 
                 const performSearch = async (query) => { 
+                    if (!canSearchDemo()) {
+                        resultsContainer.innerHTML = `<div class="col-span-full text-center py-10"><p class="text-yellow-500">Demo search is rate limited. Please try again in a minute.</p></div>`;
+                        return;
+                    }
+
                     resultsContainer.innerHTML = `<p class="col-span-full text-center text-gray-400">Searching...</p>`;
                     
                     if (currentSearchMode === 'snyf') {
@@ -344,7 +364,7 @@
                             const response = await fetch(`${SNYF_API_URL}/search/demo`, {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ query, top_k: 10 })
+                                body: JSON.stringify({ query })
                             });
                             
                             if (!response.ok) {
@@ -362,7 +382,7 @@
                             const response = await fetch(`${SNYF_API_URL}/search/demo/keyword`, {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ query, top_k: 10 })
+                                body: JSON.stringify({ query })
                             });
 
                             if (!response.ok) {

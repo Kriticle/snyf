@@ -290,13 +290,12 @@
                 <span class="rounded bg-green-900 px-2 py-1 text-xs font-bold text-green-300">POST</span>
                 <h2 class="text-2xl font-bold text-white">/search/demo</h2>
             </div>
-            <p class="mt-2 text-gray-400">Public website demo search. It does not take an API key or collection ID; the backend locks it to the demo collection so no secret is exposed in browser code.</p>
+            <p class="mt-2 text-gray-400">Public website demo search. It does not take an API key or collection ID; the backend locks it to the demo collection so no secret is exposed in browser code. Public demo requests are still rate limited.</p>
 
             <pre class="mt-5 rounded bg-gray-950 p-4 text-sm text-gray-200"><code>curl -sS -X POST "$API_URL/search/demo" \
   -H "Content-Type: application/json" \
   -d '{
-    "query": "flowy beach wedding look",
-    "top_k": 5
+    "query": "flowy beach wedding look"
   }'</code></pre>
 
             <div class="flex items-center gap-3 mt-6">

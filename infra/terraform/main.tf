@@ -784,21 +784,23 @@ module "enrichment_worker" {
 
 locals {
   service_environment = {
-    PRODUCT_TABLE_NAME    = aws_dynamodb_table.product_enrichments.name
-    COLLECTION_TABLE_NAME = aws_dynamodb_table.collections.name
-    CUSTOMERS_TABLE_NAME  = aws_dynamodb_table.customers.name
-    SESSIONS_TABLE_NAME   = aws_dynamodb_table.sessions.name
-    API_KEYS_TABLE_NAME   = aws_dynamodb_table.api_keys.name
-    USAGE_TABLE_NAME      = aws_dynamodb_table.usage_counters.name
-    JOBS_TABLE_NAME       = aws_dynamodb_table.ingestion_jobs.name
-    JOB_ERRORS_TABLE_NAME = aws_dynamodb_table.ingestion_job_errors.name
-    PRODUCT_QUEUE_URL     = aws_sqs_queue.product_jobs.url
-    UPLOAD_BUCKET         = aws_s3_bucket.uploads.bucket
-    ATTRIBUTE_LIST_BUCKET = aws_s3_bucket.uploads.bucket
-    ATTRIBUTE_LIST_PREFIX = "attributes"
-    OPENSEARCH_ENDPOINT   = "https://${aws_opensearch_domain.catalog.endpoint}"
-    DEFAULT_VECTOR_INDEX  = "${local.name}-products"
-    LLM_PROVIDER          = var.llm_provider
+    PRODUCT_TABLE_NAME         = aws_dynamodb_table.product_enrichments.name
+    COLLECTION_TABLE_NAME      = aws_dynamodb_table.collections.name
+    CUSTOMERS_TABLE_NAME       = aws_dynamodb_table.customers.name
+    SESSIONS_TABLE_NAME        = aws_dynamodb_table.sessions.name
+    API_KEYS_TABLE_NAME        = aws_dynamodb_table.api_keys.name
+    USAGE_TABLE_NAME           = aws_dynamodb_table.usage_counters.name
+    JOBS_TABLE_NAME            = aws_dynamodb_table.ingestion_jobs.name
+    JOB_ERRORS_TABLE_NAME      = aws_dynamodb_table.ingestion_job_errors.name
+    PRODUCT_QUEUE_URL          = aws_sqs_queue.product_jobs.url
+    UPLOAD_BUCKET              = aws_s3_bucket.uploads.bucket
+    ATTRIBUTE_LIST_BUCKET      = aws_s3_bucket.uploads.bucket
+    ATTRIBUTE_LIST_PREFIX      = "attributes"
+    OPENSEARCH_ENDPOINT        = "https://${aws_opensearch_domain.catalog.endpoint}"
+    DEFAULT_VECTOR_INDEX       = "${local.name}-products"
+    LLM_PROVIDER               = var.llm_provider
+    DEMO_RATE_LIMIT_PER_MINUTE = tostring(var.demo_search_rate_limit_per_minute)
+    DEMO_TOP_K                 = tostring(var.demo_search_top_k)
   }
 
   service_secrets = var.openai_api_key_secret_arn == "" ? {} : {
@@ -931,6 +933,18 @@ resource "aws_apigatewayv2_stage" "default" {
   default_route_settings {
     throttling_burst_limit = var.api_default_throttle_burst_limit
     throttling_rate_limit  = var.api_default_throttle_rate_limit
+  }
+
+  route_settings {
+    route_key              = aws_apigatewayv2_route.demo_search.route_key
+    throttling_burst_limit = var.demo_search_throttle_burst_limit
+    throttling_rate_limit  = var.demo_search_throttle_rate_limit
+  }
+
+  route_settings {
+    route_key              = aws_apigatewayv2_route.demo_keyword_search.route_key
+    throttling_burst_limit = var.demo_search_throttle_burst_limit
+    throttling_rate_limit  = var.demo_search_throttle_rate_limit
   }
 
   access_log_settings {

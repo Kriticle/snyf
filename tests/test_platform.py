@@ -803,13 +803,82 @@ prod_001,live_smoke_1778332579,Linen Wrap Dress,dresses,https://cdn.example.com/
 
             response = client.post(
                 "/search/demo/keyword",
-                json={"query": "linen dress", "top_k": 2},
+                json={"query": "linen dress"},
             )
 
             self.assertEqual(response.status_code, 200)
             payload = response.json()
             self.assertEqual(payload["collection_id"], "live_smoke_1778332579")
             self.assertEqual(payload["results"][0]["product_id"], "prod_001")
+
+    def test_demo_search_is_rate_limited_without_api_key(self) -> None:
+        async def fake_enrich(product_id, metadata, image_bytes, attribute_schema):
+            return json.dumps({"material": "linen", "occasion": "beach wedding"})
+
+        csv_text = """product_id,collection_id,name,category,image_urls,attributes,description,price
+prod_001,live_smoke_1778332579,Linen Wrap Dress,dresses,https://cdn.example.com/p1.jpg,"[""material"",""occasion""]","Airy beach dress",100
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            store = JsonStore(tmp)
+            CsvIngestionService(
+                store,
+                "cust_demo",
+                attribute_list_uri=self.write_attribute_file(tmp, '{"attributes":["material","occasion"]}'),
+            ).ingest_csv(csv_text)
+            asyncio.run(EnrichmentWorker(store, enrich_fn=fake_enrich).drain_once())
+
+            with patch.dict("os.environ", {"DEMO_RATE_LIMIT_PER_MINUTE": "1"}):
+                client = TestClient(create_search_app(tmp))
+                headers = {"x-forwarded-for": "203.0.113.10"}
+                first = client.post(
+                    "/search/demo/keyword",
+                    json={"query": "linen dress"},
+                    headers=headers,
+                )
+                second = client.post(
+                    "/search/demo/keyword",
+                    json={"query": "linen dress"},
+                    headers=headers,
+                )
+
+            self.assertEqual(first.status_code, 200)
+            self.assertEqual(second.status_code, 429)
+            self.assertIn("rate limit", second.json()["detail"])
+
+    def test_demo_search_rejects_customer_collection_and_top_k_inputs(self) -> None:
+        async def fake_enrich(product_id, metadata, image_bytes, attribute_schema):
+            return json.dumps({"material": "linen", "occasion": "beach wedding"})
+
+        csv_text = """product_id,collection_id,name,category,image_urls,attributes,description,price
+demo_001,live_smoke_1778332579,Linen Wrap Dress,dresses,https://cdn.example.com/p1.jpg,"[""material"",""occasion""]","Airy beach dress",100
+other_001,other_collection,Private Catalog Dress,dresses,https://cdn.example.com/p2.jpg,"[""material"",""occasion""]","Should not be searched",100
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            store = JsonStore(tmp)
+            CsvIngestionService(
+                store,
+                "cust_demo",
+                attribute_list_uri=self.write_attribute_file(tmp, '{"attributes":["material","occasion"]}'),
+            ).ingest_csv(csv_text)
+            asyncio.run(EnrichmentWorker(store, enrich_fn=fake_enrich).drain_once())
+
+            with patch.dict("os.environ", {"DEMO_TOP_K": "1"}):
+                client = TestClient(create_search_app(tmp))
+                valid = client.post(
+                    "/search/demo/keyword",
+                    json={"query": "dress"},
+                )
+                invalid = client.post(
+                    "/search/demo/keyword",
+                    json={"query": "dress", "collection_id": "other_collection", "top_k": 100},
+                )
+
+            self.assertEqual(valid.status_code, 200)
+            payload = valid.json()
+            self.assertEqual(payload["collection_id"], "live_smoke_1778332579")
+            self.assertEqual(len(payload["results"]), 1)
+            self.assertEqual(payload["results"][0]["product_id"], "demo_001")
+            self.assertEqual(invalid.status_code, 422)
 
 
 if __name__ == "__main__":

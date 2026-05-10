@@ -77,6 +77,30 @@ variable "api_default_throttle_rate_limit" {
   default     = 50
 }
 
+variable "demo_search_rate_limit_per_minute" {
+  description = "Per-client app-level rate limit for public demo search endpoints."
+  type        = number
+  default     = 30
+}
+
+variable "demo_search_top_k" {
+  description = "Fixed result count for public demo search endpoints. Browser callers cannot override this."
+  type        = number
+  default     = 10
+}
+
+variable "demo_search_throttle_burst_limit" {
+  description = "API Gateway burst throttle for public demo search routes."
+  type        = number
+  default     = 20
+}
+
+variable "demo_search_throttle_rate_limit" {
+  description = "API Gateway steady-state requests per second throttle for public demo search routes."
+  type        = number
+  default     = 5
+}
+
 variable "llm_provider" {
   description = "LLM provider used by ECS tasks. Use fake for smoke tests or openai for production enrichment/search parsing."
   type        = string
