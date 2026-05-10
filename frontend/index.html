@@ -296,8 +296,6 @@
             const demoContainer = document.getElementById('demo');
             if(demoContainer) {
                 const SNYF_API_URL = 'https://xydj4rm9eg.execute-api.us-east-1.amazonaws.com';
-                const SNYF_API_KEY = localStorage.getItem('snyfDemoApiKey') || localStorage.getItem('snyfApiKey');
-                const SNYF_COLLECTION_ID = localStorage.getItem('snyfDemoCollectionId') || localStorage.getItem('snyfCollectionId');
                 
                 const snyfBtn = document.getElementById('snyf-search-btn'), 
                       normalBtn = document.getElementById('normal-search-btn'),
@@ -343,58 +341,36 @@
                     
                     if (currentSearchMode === 'snyf') {
                         try {
-                            if (SNYF_API_KEY && SNYF_COLLECTION_ID) {
-                                const response = await fetch(`${SNYF_API_URL}/search`, {
-                                    method: 'POST',
-                                    headers: {
-                                        'Content-Type': 'application/json',
-                                        'x-api-key': SNYF_API_KEY
-                                    },
-                                    body: JSON.stringify({
-                                        collection_id: SNYF_COLLECTION_ID,
-                                        query,
-                                        top_k: 10
-                                    })
-                                });
-                                
-                                if (!response.ok) {
-                                    throw new Error(`Search API Error: ${response.status}`);
-                                }
-                                
-                                const data = await response.json();
-                                displayResults(data.results);
-                            } else {
-                                throw new Error('Sign up, save an API key, and choose a collection in the dashboard first.');
+                            const response = await fetch(`${SNYF_API_URL}/search/demo`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ query, top_k: 10 })
+                            });
+                            
+                            if (!response.ok) {
+                                throw new Error(`Search API Error: ${response.status}`);
                             }
+                            
+                            const data = await response.json();
+                            displayResults(data.results);
                         } catch (error) {
                             console.error("Snyf Search Error:", error);
                             resultsContainer.innerHTML = `<div class="col-span-full text-center py-10"><p class="text-red-500">Search failed: ${error.message}</p></div>`;
                         }
                     } else { 
                         try { 
-                            if (SNYF_API_KEY && SNYF_COLLECTION_ID) {
-                                const response = await fetch(`${SNYF_API_URL}/search/keyword`, {
-                                    method: 'POST',
-                                    headers: {
-                                        'Content-Type': 'application/json',
-                                        'x-api-key': SNYF_API_KEY
-                                    },
-                                    body: JSON.stringify({
-                                        collection_id: SNYF_COLLECTION_ID,
-                                        query,
-                                        top_k: 10
-                                    })
-                                });
+                            const response = await fetch(`${SNYF_API_URL}/search/demo/keyword`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ query, top_k: 10 })
+                            });
 
-                                if (!response.ok) {
-                                    throw new Error(`Keyword Search API Error: ${response.status}`);
-                                }
-
-                                const data = await response.json();
-                                displayResults(data.results);
-                            } else {
-                                throw new Error('Sign up, save an API key, and choose a collection in the dashboard first.');
+                            if (!response.ok) {
+                                throw new Error(`Keyword Search API Error: ${response.status}`);
                             }
+
+                            const data = await response.json();
+                            displayResults(data.results);
                         } catch (error) { 
                             console.error(error);
                             resultsContainer.innerHTML = `<div class="col-span-full text-center py-10"><p class="text-red-500">Keyword search failed: ${error.message}</p></div>`; 
@@ -404,11 +380,7 @@
 
                 const fetchInitialCatalog = async () => { 
                     resultsContainer.innerHTML = `<p class="col-span-full text-center text-gray-400">Loading initial catalog items...</p>`; 
-                    if (SNYF_API_KEY && SNYF_COLLECTION_ID) {
-                        await performSearch("dress");
-                    } else {
-                        resultsContainer.innerHTML = `<p class="col-span-full text-center text-yellow-500">Sign up, upload a catalog, and return here to search your collection.</p>`; 
-                    }
+                    await performSearch("dress");
                 };
                 
                 snyfBtn.addEventListener('click', () => { if (currentSearchMode === 'snyf') return; currentSearchMode = 'snyf'; updateToggleUI(); const query = searchInput.value.trim(); if (query) performSearch(query); });

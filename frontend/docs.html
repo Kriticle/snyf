@@ -286,6 +286,27 @@
         </section>
 
         <section class="mb-10 rounded-lg border border-gray-800 bg-gray-900 p-6">
+            <div class="flex items-center gap-3">
+                <span class="rounded bg-green-900 px-2 py-1 text-xs font-bold text-green-300">POST</span>
+                <h2 class="text-2xl font-bold text-white">/search/demo</h2>
+            </div>
+            <p class="mt-2 text-gray-400">Public website demo search. It does not take an API key or collection ID; the backend locks it to the demo collection so no secret is exposed in browser code.</p>
+
+            <pre class="mt-5 rounded bg-gray-950 p-4 text-sm text-gray-200"><code>curl -sS -X POST "$API_URL/search/demo" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "flowy beach wedding look",
+    "top_k": 5
+  }'</code></pre>
+
+            <div class="flex items-center gap-3 mt-6">
+                <span class="rounded bg-green-900 px-2 py-1 text-xs font-bold text-green-300">POST</span>
+                <h3 class="font-semibold text-white">/search/demo/keyword</h3>
+            </div>
+            <p class="mt-2 text-gray-400">Public keyword baseline for the same demo collection. Customer apps should use the protected endpoints above.</p>
+        </section>
+
+        <section class="mb-10 rounded-lg border border-gray-800 bg-gray-900 p-6">
             <h2 class="text-2xl font-bold text-white">Errors And Limits</h2>
             <div class="mt-5 grid md:grid-cols-2 gap-5">
                 <div>

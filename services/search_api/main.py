@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import time
 from dataclasses import asdict
 
@@ -30,6 +31,11 @@ if FastAPI is not None:
         collection_id: str
         query: str
         top_k: int = 20
+
+
+    class DemoSearchPayload(BaseModel):
+        query: str
+        top_k: int = 10
 
 
 def create_app(data_dir: str = "data"):
@@ -68,6 +74,22 @@ def create_app(data_dir: str = "data"):
             store=store,
             search_fn=service.keyword_search_with_metrics,
             metric_name="keyword_search",
+        )
+
+    @app.post("/search/demo")
+    def demo_search(payload: DemoSearchPayload):
+        return execute_demo_search(
+            payload=payload,
+            search_fn=service.search_with_metrics,
+            metric_name="demo_search",
+        )
+
+    @app.post("/search/demo/keyword")
+    def demo_keyword_search(payload: DemoSearchPayload):
+        return execute_demo_search(
+            payload=payload,
+            search_fn=service.keyword_search_with_metrics,
+            metric_name="demo_keyword_search",
         )
 
     @app.post("/search/filters")
@@ -143,6 +165,32 @@ def execute_search(
         json.dumps(metrics, sort_keys=True),
     )
     return {"results": [serialize(result) for result in results], "metrics": metrics}
+
+
+def execute_demo_search(*, payload, search_fn, metric_name: str):
+    demo_collection_id = os.getenv("DEMO_COLLECTION_ID", "live_smoke_1778332579")
+    top_k = min(payload.top_k, 10)
+    request = SearchRequest(
+        collection_id=demo_collection_id,
+        query=payload.query,
+        top_k=top_k,
+    )
+    try:
+        results, search_metrics = search_fn(request)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    logger.info(
+        "%s collection_id=%s top_k=%s metrics=%s",
+        metric_name,
+        demo_collection_id,
+        top_k,
+        json.dumps(search_metrics.to_dict(), sort_keys=True),
+    )
+    return {
+        "collection_id": demo_collection_id,
+        "results": [serialize(result) for result in results],
+        "metrics": {"search": search_metrics.to_dict()},
+    }
 
 
 app = create_app() if FastAPI is not None else None

@@ -784,6 +784,33 @@ prod_002,coll_a,Structured Blazer,outerwear,https://cdn.example.com/p2.jpg,"[""m
             self.assertEqual(payload["results"][0]["product_id"], "prod_001")
             self.assertIn("score_documents", payload["metrics"]["search"]["steps_ms"])
 
+    def test_demo_keyword_search_does_not_require_api_key(self) -> None:
+        async def fake_enrich(product_id, metadata, image_bytes, attribute_schema):
+            return json.dumps({"material": "linen", "occasion": "beach wedding"})
+
+        csv_text = """product_id,collection_id,name,category,image_urls,attributes,description,price
+prod_001,live_smoke_1778332579,Linen Wrap Dress,dresses,https://cdn.example.com/p1.jpg,"[""material"",""occasion""]","Airy beach dress",100
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            store = JsonStore(tmp)
+            CsvIngestionService(
+                store,
+                "cust_demo",
+                attribute_list_uri=self.write_attribute_file(tmp, '{"attributes":["material","occasion"]}'),
+            ).ingest_csv(csv_text)
+            asyncio.run(EnrichmentWorker(store, enrich_fn=fake_enrich).drain_once())
+            client = TestClient(create_search_app(tmp))
+
+            response = client.post(
+                "/search/demo/keyword",
+                json={"query": "linen dress", "top_k": 2},
+            )
+
+            self.assertEqual(response.status_code, 200)
+            payload = response.json()
+            self.assertEqual(payload["collection_id"], "live_smoke_1778332579")
+            self.assertEqual(payload["results"][0]["product_id"], "prod_001")
+
 
 if __name__ == "__main__":
     unittest.main()

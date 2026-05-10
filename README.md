@@ -445,6 +445,22 @@ Invalid `top_k`:
 }
 ```
 
+### Public website demo search
+
+The deployed marketing-site demo must not include customer API keys in browser code. It calls demo-only routes that are locked server-side to the configured demo collection:
+
+```bash
+curl -sS -X POST "$SEARCH_URL/search/demo" \
+  -H "content-type: application/json" \
+  -d '{"query":"flowy beach wedding look","top_k":5}'
+
+curl -sS -X POST "$SEARCH_URL/search/demo/keyword" \
+  -H "content-type: application/json" \
+  -d '{"query":"linen dress","top_k":5}'
+```
+
+These endpoints do not accept `collection_id` or `x-api-key`; protected customer apps should use `/search` and `/search/keyword`.
+
 ## Search Flow
 
 1. Validate `top_k` is between `1` and `100`.

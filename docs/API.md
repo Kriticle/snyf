@@ -433,6 +433,35 @@ Search behavior:
 - Attribute weights come from the attribute list.
 - Results are reranked by weighted attribute similarity; if no query attributes are extracted, the result falls back to retrieval semantic score.
 
+## Public Website Demo Search
+
+The marketing-site live demo must not expose a customer API key in browser JavaScript. It uses public demo-only routes that are locked server-side to the configured demo collection.
+
+```http
+POST /search/demo
+content-type: application/json
+```
+
+```http
+POST /search/demo/keyword
+content-type: application/json
+```
+
+Request:
+
+```json
+{
+  "query": "linen beach dress",
+  "top_k": 10
+}
+```
+
+Notes:
+
+- These endpoints do not accept `collection_id` or `x-api-key`.
+- The backend uses `DEMO_COLLECTION_ID` and caps `top_k` at `10`.
+- Customer products must use protected `/search` and `/search/keyword`.
+
 ## Plan Limits
 
 Plan limits are enforced for protected ingestion and search requests.
