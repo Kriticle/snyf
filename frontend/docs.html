@@ -47,7 +47,7 @@
         <header class="mb-10">
             <p class="snyf-kicker mb-4"><i class="fas fa-code"></i> API documentation</p>
             <h1 class="text-4xl font-bold text-white">Snyf API Reference</h1>
-            <p class="text-gray-400 mt-3 max-w-3xl">Use these endpoints to create accounts, manage API keys, upload catalogs, poll ingestion jobs, and search enriched collections.</p>
+            <p class="text-gray-400 mt-3 max-w-3xl">Use these endpoints to manage API keys, upload catalogs, poll ingestion jobs, and search enriched collections.</p>
             <div class="mt-5 rounded-lg border border-gray-800 bg-gray-900 p-4 font-mono text-sm text-gray-200">https://xydj4rm9eg.execute-api.us-east-1.amazonaws.com</div>
             <div class="mt-5 flex flex-wrap gap-3">
                 <a href="assets/catalog-template.csv" download class="inline-flex items-center rounded-md border border-gray-800 bg-gray-900 px-4 py-2 text-sm font-semibold text-primary hover:text-secondary">
@@ -61,37 +61,8 @@
 
         <section class="mb-10 rounded-lg border border-gray-800 bg-gray-900 p-6">
             <h2 class="text-2xl font-bold text-white">Authentication</h2>
-            <p class="mt-2 text-gray-400">Signup and login use email/password. Catalog upload, job polling, and search use the customer API key in the <code class="text-primary">x-api-key</code> header.</p>
-
-            <div class="mt-6 grid lg:grid-cols-2 gap-5">
-                <div>
-                    <div class="flex items-center gap-3 mb-2">
-                        <span class="rounded bg-green-900 px-2 py-1 text-xs font-bold text-green-300">POST</span>
-                        <h3 class="font-semibold text-white">/auth/signup</h3>
-                    </div>
-                    <pre class="rounded bg-gray-950 p-4 text-sm text-gray-200"><code>curl -sS -X POST "$API_URL/auth/signup" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "customer@example.com",
-    "password": "password123"
-  }'</code></pre>
-                    <p class="mt-3 text-sm text-gray-400">Returns <code class="text-primary">customer</code>, <code class="text-primary">session</code>, <code class="text-primary">refresh_token</code>, <code class="text-primary">api_key</code>, and <code class="text-primary">api_key_id</code>.</p>
-                </div>
-
-                <div>
-                    <div class="flex items-center gap-3 mb-2">
-                        <span class="rounded bg-green-900 px-2 py-1 text-xs font-bold text-green-300">POST</span>
-                        <h3 class="font-semibold text-white">/auth/login</h3>
-                    </div>
-                    <pre class="rounded bg-gray-950 p-4 text-sm text-gray-200"><code>curl -sS -X POST "$API_URL/auth/login" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "customer@example.com",
-    "password": "password123"
-  }'</code></pre>
-                    <p class="mt-3 text-sm text-gray-400">Returns <code class="text-primary">customer</code>, <code class="text-primary">session</code>, and <code class="text-primary">refresh_token</code>.</p>
-                </div>
-            </div>
+            <p class="mt-2 text-gray-400">Catalog upload, job polling, and search use the customer API key in the <code class="text-primary">x-api-key</code> header.</p>
+            <pre class="mt-5 rounded bg-gray-950 p-4 text-sm text-gray-200"><code>x-api-key: $API_KEY</code></pre>
         </section>
 
         <section class="mb-10 rounded-lg border border-gray-800 bg-gray-900 p-6">
