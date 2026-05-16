@@ -70,7 +70,7 @@
                 <span class="rounded bg-green-900 px-2 py-1 text-xs font-bold text-green-300">POST</span>
                 <h2 class="text-2xl font-bold text-white">/collections/{collection_id}/upload</h2>
             </div>
-            <p class="mt-2 text-gray-400">Uploads a catalog CSV to one collection and queues accepted rows for enrichment.</p>
+            <p class="mt-2 text-gray-400">Uploads a catalog CSV to the collection named in the URL and queues accepted rows for enrichment.</p>
 
             <label for="docs-attribute-list" class="block mt-5 text-sm font-semibold text-gray-400">Product attribute list</label>
             <select id="docs-attribute-list" class="mt-2 w-full max-w-xl px-4 py-3 rounded-lg bg-gray-900 border border-gray-700 text-white focus:ring-primary focus:border-primary focus:outline-none">
@@ -101,7 +101,8 @@
                 </table>
             </div>
 
-            <p class="mt-5 text-sm text-gray-400">Required CSV columns: <code class="text-primary">product_id</code>, <code class="text-primary">name</code>, <code class="text-primary">image_urls</code>. Optional columns: <code class="text-primary">collection_id</code>, <code class="text-primary">category</code>, <code class="text-primary">description</code>, <code class="text-primary">price</code>, <code class="text-primary">currency</code>, <code class="text-primary">brand</code>, <code class="text-primary">attributes</code>, <code class="text-primary">_deleted</code>.</p>
+            <p class="mt-5 text-sm text-gray-400">Required CSV columns: <code class="text-primary">product_id</code>, <code class="text-primary">name</code>, <code class="text-primary">image_urls</code>. The CSV does not need <code class="text-primary">collection_id</code>; the upload URL supplies it. If present, <code class="text-primary">collection_id</code> must match the URL collection.</p>
+            <p class="mt-2 text-sm text-gray-400">Optional CSV columns: <code class="text-primary">category</code>, <code class="text-primary">description</code>, <code class="text-primary">price</code>, <code class="text-primary">currency</code>, <code class="text-primary">brand</code>, <code class="text-primary">_deleted</code>. Use <code class="text-primary">attribute_list_id</code> in the upload form/API instead of an <code class="text-primary">attributes</code> CSV column.</p>
 
             <h3 class="font-semibold text-white mt-6 mb-2">Response</h3>
             <pre class="rounded bg-gray-950 p-4 text-sm text-gray-200"><code>{

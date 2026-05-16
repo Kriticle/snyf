@@ -1,3 +1,1 @@
-product_id,name,image_urls,category,description,price,currency,brand,attributes,_deleted
-prod_001,Linen Wrap Dress,https://images.unsplash.com/photo-1515372039744-b8f02a3ae446?auto=format&fit=crop&w=900&q=80,dresses,"Airy linen wrap dress with a relaxed fit for warm destination events.",148,USD,Snyf Sample,"{""material"":""linen"",""occasion"":""vacation wedding"",""silhouette"":""flowy""}",
-prod_002,Structured Cropped Blazer,https://images.unsplash.com/photo-1496747611176-843222e1e57c?auto=format&fit=crop&w=900&q=80,outerwear,"Tailored cropped blazer with sharp shoulders and a polished city feel.",220,USD,Snyf Sample,"{""occasion"":""work dinner"",""silhouette"":""structured"",""vibe"":""sharp""}",
+product_id,name,image_urls,category,description,price,currency,brand
