@@ -504,13 +504,18 @@ func main() {
     "search": {
       "total_ms": 790.0,
       "steps_ms": {
-        "extract_query_attributes": 488.17,
         "embed_query": 96.31,
+        "extract_query_attributes": 488.17,
+        "vector_retrieve_documents": 42.89,
+        "embed_query_rerank_attributes": 126.48,
         "rerank_candidates": 0.42
-      }
+      },
+      "embedding_calls": 2,
+      "embedding_cache_hits": 4
     }
   }
 }</code></pre>
+            <p class="mt-4 text-sm text-gray-400">Search uses OpenSearch kNN retrieval for candidate products. Query embeddings, query-attribute embeddings, and parsed query attributes are cached first in the running service and then in a shared DynamoDB cache, so repeated searches can skip model calls.</p>
         </section>
 
         <section class="mb-10 rounded-lg border border-gray-800 bg-gray-900 p-6">

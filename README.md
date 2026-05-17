@@ -1,6 +1,6 @@
 # Fashion Attribute Enrichment Platform
 
-CSV ingestion -> LLM enrichment -> OpenSearch vector retrieval -> LLM-assisted reranking.
+CSV ingestion -> LLM enrichment -> OpenSearch kNN vector retrieval -> cached LLM-assisted reranking.
 
 This repo contains a runnable local MVP plus Terraform and deployment workflows for the AWS production shape.
 
@@ -404,11 +404,11 @@ Example response:
       "steps_ms": {
         "load_attribute_list": 35.21,
         "embed_query": 96.31,
-        "load_documents": 42.89,
         "extract_query_attributes": 488.17,
+        "vector_retrieve_documents": 42.89,
+        "merge_weights": 0.01,
         "apply_hard_filters": 0.02,
-        "vector_candidate_sort": 0.05,
-        "embed_rerank_attributes": 126.48,
+        "embed_query_rerank_attributes": 126.48,
         "rerank_candidates": 0.42,
         "sort_results": 0.01
       },
@@ -489,8 +489,8 @@ They are still rate limited per client and return `429` if the public demo is ov
 3. Reserve one search request against the customer's monthly plan.
 4. Confirm the collection belongs to the authenticated customer.
 5. Load the collection's registered attribute list.
-6. Embed the query.
-7. Ask query LLM to return:
+6. Embed the query. Search checks in-memory cache first, then the shared DynamoDB search cache, then the configured embedding provider.
+7. Ask the query LLM to extract attributes from the query and collection attribute list. The parsed JSON is also cached by query, parser model, and attribute-list fingerprint.
 
 ```json
 {
@@ -504,16 +504,24 @@ They are still rate limited per client and return `429` if the public demo is ov
 }
 ```
 
-8. Apply only LLM-returned `category`, `price_min`, and `price_max` hard filters.
-9. Retrieve vector candidates.
-10. Rerank:
+8. Retrieve collection-scoped candidates from OpenSearch using kNN vector search.
+9. Apply only LLM-returned `category`, `price_min`, and `price_max` hard filters.
+10. Embed only the extracted query attribute values needed for reranking. Product-side attribute embeddings were precomputed during ingestion and stored in OpenSearch.
+11. Rerank:
 
 ```text
-attribute_score = normalize_cosine(embed(attribute + query_value), embed(attribute + document_value))
+attribute_score = normalize_cosine(embed(attribute + query_value), stored_document_attribute_embedding)
 final_score = sum(weight * attribute_score) / sum(weights for query attributes)
 ```
 
 If the query LLM extracts no attributes, search falls back to retrieval semantic score.
+
+Latency instrumentation:
+
+- API metrics report auth, usage, collection lookup, and total search-service time.
+- Search metrics report `load_attribute_list`, `embed_query`, `extract_query_attributes`, `vector_retrieve_documents`, `embed_query_rerank_attributes`, `rerank_candidates`, and `sort_results`.
+- `embedding_calls`, `embedding_texts`, and `embedding_cache_hits` show whether a request paid for model embeddings or hit cache.
+- Persistent cache hits survive ECS task restarts because query embeddings, query-attribute embeddings, and query parser outputs are stored in DynamoDB with TTL.
 
 ## Ingestion Flow
 
@@ -524,7 +532,12 @@ If the query LLM extracts no attributes, search falls back to retrieval semantic
 5. Register `collection_id -> attribute_list_id`, plus the backend-resolved internal S3 URI.
 6. Validate CSV rows permissively.
 7. Enqueue one product message per accepted row.
-8. Worker downloads images, calls enrichment LLM, embeds enriched text, and writes product state plus OpenSearch document.
+8. Worker downloads images from the public URLs supplied in the CSV.
+9. Worker calls the enrichment LLM with product metadata, images, and the collection attribute list.
+10. Worker parses and validates the returned JSON. Empty enriched attributes, missing images, or empty embeddings fail the product and send the message to the DLQ.
+11. Worker embeds the enriched product text for retrieval.
+12. Worker embeds each enriched attribute value once and stores those vectors as `attribute_embeddings`.
+13. Worker writes product state to DynamoDB and a denormalized searchable product document to OpenSearch, including `image_urls`, metadata, full product embedding, enriched attrs, and per-attribute embeddings.
 
 ## Plan Limits
 
@@ -574,6 +587,7 @@ It provisions:
   - `UsageCounters`
   - `Collections`
   - `ProductEnrichments`
+  - `SearchCache`
   - `IngestionJobs`
   - `IngestionJobErrors`
 - SQS product jobs queue and DLQ

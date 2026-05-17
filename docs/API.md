@@ -266,6 +266,7 @@ Notes:
 - Product images are not copied into our S3 bucket. The CSV supplies public image URLs.
 - The worker downloads those URLs during enrichment.
 - `image_urls` are stored on the product record and denormalized into the OpenSearch document so search can render product cards without a second lookup.
+- The enrichment worker stores one full product embedding for OpenSearch kNN retrieval and one embedding per enriched attribute value for low-latency reranking.
 - The upload path owns the collection. Do not include `collection_id` in the CSV.
 
 ## Ingestion Job Status
@@ -361,12 +362,11 @@ Response:
       "steps_ms": {
         "load_attribute_list": 35.21,
         "embed_query": 96.31,
-        "load_documents": 42.89,
         "extract_query_attributes": 488.17,
+        "vector_retrieve_documents": 42.89,
         "merge_weights": 0.01,
         "apply_hard_filters": 0.02,
-        "vector_candidate_sort": 0.05,
-        "embed_rerank_attributes": 126.48,
+        "embed_query_rerank_attributes": 126.48,
         "rerank_candidates": 0.42,
         "sort_results": 0.01
       },
@@ -405,7 +405,7 @@ Response:
 }
 ```
 
-Metrics are returned on every search response and are also written to the search API logs. Use them to identify whether latency is coming from auth/usage checks, collection lookup, attribute-list loading, query embedding, query-attribute LLM parsing, OpenSearch document retrieval, or reranking.
+Metrics are returned on every search response and are also written to the search API logs. Use them to identify whether latency is coming from auth/usage checks, collection lookup, attribute-list loading, query embedding, query-attribute LLM parsing, OpenSearch kNN retrieval, query-attribute embedding, or reranking.
 
 Example:
 
@@ -428,6 +428,9 @@ Search behavior:
 - Only `category`, `price_min`, and `price_max` can be hard filters.
 - If no hard filter is extracted, nothing is excluded based on category or price.
 - Attribute weights come from the attribute list.
+- Query embeddings, extracted query attributes, and query-attribute embeddings use an in-memory cache plus a shared DynamoDB persistent cache.
+- OpenSearch performs collection-scoped kNN retrieval over the stored product embedding.
+- Product-side attribute embeddings are precomputed during ingestion and stored in the OpenSearch product document.
 - Results are reranked by weighted attribute similarity; if no query attributes are extracted, the result falls back to retrieval semantic score.
 
 ## Public Website Demo Search
@@ -488,4 +491,5 @@ Limit error example:
 - Product images remain hosted by the customer/CDN; we store and return their URLs.
 - Attribute-list files are read from S3 in production.
 - Current deployment uses `LLM_PROVIDER=openai` with `OPENAI_API_KEY` injected from AWS Secrets Manager.
+- Search uses OpenSearch kNN vector retrieval and a DynamoDB `SearchCache` table for persistent query/embedding cache entries with TTL.
 - For low-cost infra-only smoke tests, Terraform can be applied with `llm_provider=fake`.
