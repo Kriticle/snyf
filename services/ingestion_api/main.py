@@ -74,6 +74,26 @@ def create_app(data_dir: str = "data"):
         except AuthError as exc:
             raise HTTPException(status_code=401, detail=str(exc)) from exc
 
+    @app.get("/collections/{collection_id}")
+    def get_collection(collection_id: str, x_api_key: str | None = Header(default=None)):
+        customer = authenticate_request(auth_service, x_api_key)
+        collection = store.get_collection_config(collection_id)
+        if collection is None:
+            return {
+                "collection_id": collection_id,
+                "exists": False,
+                "attribute_list_locked": False,
+                "attribute_list_id": None,
+            }
+        if collection.customer_id != customer.customer_id:
+            raise HTTPException(status_code=404, detail="Collection not found.")
+        return {
+            "collection_id": collection.collection_id,
+            "exists": True,
+            "attribute_list_locked": True,
+            "attribute_list_id": collection.attribute_list_id,
+        }
+
     @app.get("/ingestion-jobs/{job_id}")
     def get_ingestion_job(job_id: str, x_api_key: str | None = Header(default=None)):
         customer = authenticate_request(auth_service, x_api_key)
@@ -100,21 +120,25 @@ def create_app(data_dir: str = "data"):
         collection_id: str,
         csv_file: UploadFile = File(...),
         x_api_key: str | None = Header(default=None),
-        attribute_list_id: str | None = Form(None),
-        attributes: str | None = Form(None),
+        attribute_list_id: str = Form(...),
         process_now: bool = Form(False),
     ):
         customer = authenticate_request(auth_service, x_api_key)
         existing_collection = store.get_collection_config(collection_id)
         if existing_collection is not None and existing_collection.customer_id != customer.customer_id:
             raise HTTPException(status_code=404, detail="Collection not found.")
+        if existing_collection is not None and existing_collection.attribute_list_id != attribute_list_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Collection already has an attribute_list_id. Existing collections cannot change attribute lists during upload.",
+            )
         csv_text = (await csv_file.read()).decode("utf-8")
         try:
             usage_service.reserve_ingestion_rows(customer, count_csv_rows(csv_text))
         except PlanLimitError as exc:
             raise HTTPException(status_code=402, detail=str(exc)) from exc
-        attribute_list_uri = resolve_attribute_list_uri(attribute_list_id)
-        resolved_attributes = resolve_attributes(attributes, attribute_list_uri)
+        attribute_list_uri = existing_collection.attribute_list_uri if existing_collection else resolve_attribute_list_uri(attribute_list_id)
+        resolved_attributes = resolve_attributes(attribute_list_uri)
         service = CsvIngestionService(
             store,
             customer_id=customer.customer_id,
@@ -203,9 +227,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Ingest a catalog CSV and process rows immediately.")
     parser.add_argument("csv_path", type=Path)
     parser.add_argument("--customer-id", default="local_customer")
-    parser.add_argument("--attributes", help='JSON array or comma-separated list, e.g. \'["occasion","color"]\'')
-    parser.add_argument("--attribute-list-id", help="Stable id or file name for the collection attribute list")
-    parser.add_argument("--attribute-list-uri", help="s3://bucket/key or local file containing the attribute JSON list")
+    parser.add_argument("--attribute-list-id", required=True, help="Stable id or file name for the collection attribute list")
+    parser.add_argument("--attribute-list-uri", required=True, help="s3://bucket/key or local file containing the attribute JSON list")
     parser.add_argument("--data-dir", default="data")
     parser.add_argument("--job-id", default="local-job")
     args = parser.parse_args()
@@ -213,7 +236,7 @@ def main() -> None:
     from shared.storage import JsonStore
 
     store = JsonStore(args.data_dir)
-    resolved_attributes = resolve_attributes(args.attributes, args.attribute_list_uri)
+    resolved_attributes = resolve_attributes(args.attribute_list_uri)
     service = CsvIngestionService(
         store,
         customer_id=args.customer_id,
@@ -228,22 +251,10 @@ def main() -> None:
     print(json.dumps(payload, indent=2))
 
 
-def parse_attributes(value: str | None) -> list[str] | None:
-    if not value:
-        return None
-    try:
-        parsed = json.loads(value)
-        if isinstance(parsed, list) and all(isinstance(item, str) and item.strip() for item in parsed):
-            return [item.strip() for item in parsed]
-    except json.JSONDecodeError:
-        pass
-    return [item.strip() for item in value.split(",") if item.strip()]
-
-
-def resolve_attributes(attributes: str | None, attribute_list_uri: str | None) -> list[str] | None:
+def resolve_attributes(attribute_list_uri: str | None) -> list[str] | None:
     if attribute_list_uri:
         return load_attribute_list(attribute_list_uri).names
-    return parse_attributes(attributes)
+    return None
 
 
 def resolve_attribute_list_uri(attribute_list_id: str | None) -> str | None:

@@ -150,6 +150,7 @@
                                     Save
                                 </button>
                             </div>
+                            <p id="collection-config-status" class="text-xs text-gray-500 mt-2">Choose a collection to check its attribute-list settings.</p>
                         </div>
 
                         <form id="catalog-upload-form">
@@ -200,6 +201,7 @@
         let g_refreshToken = localStorage.getItem('snyfRefreshToken');
         let g_apiKey = localStorage.getItem('snyfApiKey');
         let g_collectionId = localStorage.getItem('snyfCollectionId');
+        let g_collectionConfig = null;
 
         let isKeyVisible = false;
 
@@ -217,6 +219,7 @@
         const uploadStatus = document.getElementById('upload-status');
         const csvFileInput = document.getElementById('csv-file-input');
         const attributeListIdInput = document.getElementById('attribute-list-id-input');
+        const collectionConfigStatus = document.getElementById('collection-config-status');
         const resultsContainer = document.getElementById('dashboard-results-container');
         const catalogUploadPrompt = document.getElementById('catalog-upload-prompt');
         const searchForm = document.getElementById('dashboard-search-form');
@@ -297,6 +300,14 @@
             else uploadStatus.classList.add('text-blue-400');
         };
 
+        const setCollectionStatus = (message, type = 'info') => {
+            collectionConfigStatus.textContent = message;
+            collectionConfigStatus.className = 'text-xs mt-2';
+            if (type === 'success') collectionConfigStatus.classList.add('text-green-400');
+            else if (type === 'error') collectionConfigStatus.classList.add('text-red-400');
+            else collectionConfigStatus.classList.add('text-gray-500');
+        };
+
         const populateAttributeLists = () => {
             const savedAttributeListId = localStorage.getItem('snyfAttributeListId') || DEFAULT_ATTRIBUTE_LIST_ID;
             attributeListIdInput.innerHTML = ATTRIBUTE_LISTS.map((item) => {
@@ -306,6 +317,56 @@
             if (!attributeListIdInput.value) {
                 attributeListIdInput.value = DEFAULT_ATTRIBUTE_LIST_ID;
             }
+        };
+
+        const setAttributeListLocked = (locked, attributeListId = null) => {
+            attributeListIdInput.disabled = locked;
+            attributeListIdInput.classList.toggle('opacity-60', locked);
+            attributeListIdInput.classList.toggle('cursor-not-allowed', locked);
+            if (attributeListId) {
+                if (!Array.from(attributeListIdInput.options).some((option) => option.value === attributeListId)) {
+                    attributeListIdInput.insertAdjacentHTML(
+                        'beforeend',
+                        `<option value="${attributeListId}">${attributeListId} (saved collection)</option>`
+                    );
+                }
+                attributeListIdInput.value = attributeListId;
+            }
+        };
+
+        const refreshCollectionConfig = async (collectionId = null) => {
+            const targetCollectionId = collectionId || collectionInput.value.trim();
+            if (!targetCollectionId) {
+                g_collectionConfig = null;
+                setAttributeListLocked(false);
+                setCollectionStatus('Choose a collection to check its attribute-list settings.');
+                return null;
+            }
+            if (!g_apiKey) {
+                g_collectionConfig = null;
+                setAttributeListLocked(false);
+                setCollectionStatus('Save your API key before checking collection settings.');
+                return null;
+            }
+
+            const response = await fetch(`${SNYF_API_URL}/collections/${encodeURIComponent(targetCollectionId)}`, {
+                headers: { 'x-api-key': g_apiKey }
+            });
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.detail || data.message || 'Could not check collection settings.');
+            }
+
+            g_collectionConfig = data;
+            if (data.exists) {
+                setAttributeListLocked(true, data.attribute_list_id);
+                setCollectionStatus(`Existing collection. Attribute list is locked to ${data.attribute_list_id}.`, 'success');
+            } else {
+                setAttributeListLocked(false);
+                setCollectionStatus('New collection. Choose an attribute list before uploading.');
+            }
+            return data;
         };
 
         const loadApiKeys = async () => {
@@ -349,6 +410,7 @@
                 localStorage.setItem('snyfApiKey', g_apiKey);
                 isKeyVisible = true;
                 updateKeyDisplay();
+                await refreshCollectionConfig().catch((error) => showStatus(error.message, 'error'));
                 showStatus('New API key generated.', 'success');
             } catch (error) {
                 showStatus(error.message, 'error');
@@ -452,6 +514,7 @@
             updateKeyDisplay();
             try {
                 await loadApiKeys();
+                await refreshCollectionConfig();
             } catch (error) {
                 showStatus(error.message, 'error');
             }
@@ -474,6 +537,11 @@
 
             if (!attributeListId) {
                 throw new Error('Attribute list file name is required.');
+            }
+
+            await refreshCollectionConfig(collectionId);
+            if (g_collectionConfig?.exists && g_collectionConfig.attribute_list_id !== attributeListId) {
+                throw new Error(`This collection is locked to ${g_collectionConfig.attribute_list_id}.`);
             }
 
             localStorage.setItem('snyfAttributeListId', attributeListId);
@@ -539,13 +607,21 @@
         document.addEventListener('DOMContentLoaded', () => {
             loadDashboardData();
             generateKeyBtn.addEventListener('click', handleGenerateKey);
-            saveCollectionBtn.addEventListener('click', () => {
+            saveCollectionBtn.addEventListener('click', async () => {
                 try {
-                    ensureCollectionId();
+                    const collectionId = ensureCollectionId();
+                    await refreshCollectionConfig(collectionId);
                     showStatus('Collection saved.', 'success');
                 } catch (error) {
                     showStatus(error.message, 'error');
                 }
+            });
+            collectionInput.addEventListener('blur', () => {
+                const collectionId = collectionInput.value.trim();
+                if (!collectionId || !g_apiKey) return;
+                refreshCollectionConfig(collectionId).catch((error) => {
+                    setCollectionStatus(error.message, 'error');
+                });
             });
             uploadForm.addEventListener('submit', async (e) => {
                 e.preventDefault();

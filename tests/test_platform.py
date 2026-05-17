@@ -39,7 +39,11 @@ prod_003,coll_a,Non HTTPS,dresses,http://cdn.example.com/p3.jpg,"[""occasion""]"
 """
         with tempfile.TemporaryDirectory() as tmp:
             store = JsonStore(tmp)
-            result = CsvIngestionService(store, "cust_a").ingest_csv(csv_text)
+            result = CsvIngestionService(
+                store,
+                "cust_a",
+                attribute_list_uri=self.write_attribute_file(tmp),
+            ).ingest_csv(csv_text)
 
             self.assertEqual(result.accepted_rows, 1)
             self.assertEqual(result.rejected_rows, 2)
@@ -333,6 +337,64 @@ prod_001,coll_a,Linen Trouser,bottoms,https://cdn.example.com/p1.jpg,"[""occasio
             self.assertEqual(collection.attribute_list_id, "attributes")
             self.assertEqual(collection.attribute_list_uri, attr_file)
 
+    def test_collection_lookup_reports_existing_attribute_list_for_owner(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            client = TestClient(create_app(tmp))
+            attr_file = self.write_attribute_file(tmp)
+            signup = client.post(
+                "/auth/signup",
+                json={"email": "collection@example.com", "password": "password123"},
+            ).json()
+            JsonStore(tmp).upsert_collection_config(
+                CollectionConfig(
+                    collection_id="coll_a",
+                    customer_id=signup["customer"]["customer_id"],
+                    attribute_list_id="attributes",
+                    attribute_list_uri=attr_file,
+                )
+            )
+
+            existing = client.get("/collections/coll_a", headers={"x-api-key": signup["api_key"]})
+            missing = client.get("/collections/new_coll", headers={"x-api-key": signup["api_key"]})
+
+            self.assertEqual(existing.status_code, 200)
+            self.assertTrue(existing.json()["exists"])
+            self.assertTrue(existing.json()["attribute_list_locked"])
+            self.assertEqual(existing.json()["attribute_list_id"], "attributes")
+            self.assertEqual(missing.status_code, 200)
+            self.assertFalse(missing.json()["exists"])
+
+    def test_existing_collection_attribute_list_cannot_be_changed_on_upload(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            client = TestClient(create_app(tmp))
+            attr_file = self.write_attribute_file(tmp)
+            signup = client.post(
+                "/auth/signup",
+                json={"email": "locked@example.com", "password": "password123"},
+            ).json()
+            JsonStore(tmp).upsert_collection_config(
+                CollectionConfig(
+                    collection_id="coll_a",
+                    customer_id=signup["customer"]["customer_id"],
+                    attribute_list_id="attributes",
+                    attribute_list_uri=attr_file,
+                )
+            )
+            csv_text = (
+                "product_id,collection_id,name,category,image_urls,description,price\n"
+                "prod_001,coll_a,Linen Trouser,bottoms,https://cdn.example.com/p1.jpg,Cream linen wide leg holiday trouser,89\n"
+            )
+
+            response = client.post(
+                "/collections/coll_a/upload",
+                headers={"x-api-key": signup["api_key"]},
+                data={"attribute_list_id": "fashion-v1"},
+                files={"csv_file": ("catalog.csv", csv_text, "text/csv")},
+            )
+
+            self.assertEqual(response.status_code, 400)
+            self.assertIn("cannot change attribute lists", response.json()["detail"])
+
     def test_upload_rejects_attribute_list_uri_as_file_name(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             client = TestClient(create_app(tmp))
@@ -364,7 +426,7 @@ prod_001,coll_a,Linen Trouser,bottoms,https://cdn.example.com/p1.jpg,"Cream line
 
             self.assertEqual(result.accepted_rows, 0)
             self.assertEqual(result.rejected_rows, 1)
-            self.assertIn("No attribute list", result.issues[0].message)
+            self.assertIn("No collection attribute list", result.issues[0].message)
 
     def test_worker_parses_llm_json_string_and_keeps_requested_keys(self) -> None:
         parsed = parse_enrichment_response(
@@ -386,7 +448,11 @@ prod_001,coll_a,Look One,looks,https://cdn.example.com/p1.jpg,"[""style_mood""]"
 """
         with tempfile.TemporaryDirectory() as tmp:
             store = JsonStore(tmp)
-            CsvIngestionService(store, "cust_a").ingest_csv(csv_text)
+            CsvIngestionService(
+                store,
+                "cust_a",
+                attribute_list_uri=self.write_attribute_file(tmp, '{"attributes":["style_mood"]}'),
+            ).ingest_csv(csv_text)
             processed = asyncio.run(EnrichmentWorker(store, enrich_fn=empty_enrich).drain_once())
 
             record = store.get_record("coll_a", "prod_001")
@@ -406,7 +472,11 @@ prod_001,coll_a,Look One,looks,https://cdn.example.com/p1.jpg,"[""style_mood""]"
 """
         with tempfile.TemporaryDirectory() as tmp:
             store = JsonStore(tmp)
-            CsvIngestionService(store, "cust_a").ingest_csv(csv_text)
+            CsvIngestionService(
+                store,
+                "cust_a",
+                attribute_list_uri=self.write_attribute_file(tmp, '{"attributes":["style_mood"]}'),
+            ).ingest_csv(csv_text)
             processed = asyncio.run(EnrichmentWorker(store, enrich_fn=valid_enrich, embed_fn=empty_embed).drain_once())
 
             record = store.get_record("coll_a", "prod_001")
@@ -427,7 +497,11 @@ prod_001,coll_a,Look One,looks,https://cdn.example.com/p1.jpg,"[""style_mood""]"
 """
         with tempfile.TemporaryDirectory() as tmp:
             store = JsonStore(tmp)
-            CsvIngestionService(store, "cust_a").ingest_csv(csv_text)
+            CsvIngestionService(
+                store,
+                "cust_a",
+                attribute_list_uri=self.write_attribute_file(tmp, '{"attributes":["style_mood"]}'),
+            ).ingest_csv(csv_text)
             processed = asyncio.run(EmptyImageWorker(store, enrich_fn=should_not_run).drain_once())
 
             record = store.get_record("coll_a", "prod_001")

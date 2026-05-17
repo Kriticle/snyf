@@ -889,6 +889,12 @@ resource "aws_apigatewayv2_route" "upload" {
   target    = "integrations/${aws_apigatewayv2_integration.alb.id}"
 }
 
+resource "aws_apigatewayv2_route" "get_collection" {
+  api_id    = aws_apigatewayv2_api.http.id
+  route_key = "GET /collections/{collection_id}"
+  target    = "integrations/${aws_apigatewayv2_integration.alb.id}"
+}
+
 resource "aws_apigatewayv2_route" "job_status" {
   api_id    = aws_apigatewayv2_api.http.id
   route_key = "GET /ingestion-jobs/{job_id}"

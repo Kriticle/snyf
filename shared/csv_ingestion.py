@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import csv
-import json
 from dataclasses import dataclass, field
 from io import StringIO
 from typing import Any
@@ -196,34 +195,15 @@ class CsvIngestionService:
             return self.attribute_list.names, issues
         if self.attributes:
             return self.attributes, issues
-        schema_id = clean(row.get("attribute_schema_id"))
-        if schema_id:
-            schema = self.attribute_schemas.get(schema_id)
-            if schema:
-                return schema, issues
-            issues.append(
-                CsvIssue(row_number, product_id, "attribute_schema_id", "Unknown schema.", "error")
+        issues.append(
+            CsvIssue(
+                row_number,
+                product_id,
+                "attribute_list_id",
+                "No collection attribute list was provided.",
             )
-        raw = clean(row.get("attributes"))
-        if not raw:
-            issues.append(
-                CsvIssue(
-                    row_number,
-                    product_id,
-                    "attributes",
-                    "No attribute list was provided by API parameter, attribute_list_uri, schema, or row.",
-                )
-            )
-            return [], issues
-        try:
-            parsed = json.loads(raw)
-        except json.JSONDecodeError:
-            issues.append(CsvIssue(row_number, product_id, "attributes", "Invalid JSON attribute list."))
-            return [], issues
-        if not isinstance(parsed, list) or not all(isinstance(item, str) and item.strip() for item in parsed):
-            issues.append(CsvIssue(row_number, product_id, "attributes", "Invalid attribute list."))
-            return [], issues
-        return [item.strip() for item in parsed], issues
+        )
+        return [], issues
 
     def _load_attribute_list(self) -> AttributeList | None:
         if not self.attribute_list_uri:
@@ -232,6 +212,8 @@ class CsvIngestionService:
 
     def _upsert_collection_config(self, collection_id: str) -> None:
         if not self.attribute_list_uri:
+            return
+        if self.store.get_collection_config(collection_id):
             return
         attribute_list_id = self.attribute_list_id or self.attribute_list_uri.rsplit("/", 1)[-1]
         self.store.upsert_collection_config(

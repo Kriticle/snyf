@@ -190,8 +190,7 @@ Form fields:
 | Field | Required | Description |
 | --- | --- | --- |
 | `csv_file` | Yes | CSV file containing products |
-| `attribute_list_id` | Yes for production | Attribute-list file name, for example `fashion-v1` or `fashion-v1.json`. The backend resolves this under the configured attribute-list bucket/prefix. |
-| `attributes` | Local/dev fallback | Inline comma-separated or JSON array of attributes |
+| `attribute_list_id` | Yes | Attribute-list file name, for example `fashion-v1` or `fashion-v1.json`. The backend resolves this under the configured attribute-list bucket/prefix. |
 
 Required CSV columns:
 
