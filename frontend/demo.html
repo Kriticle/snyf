@@ -48,7 +48,7 @@
             <div class="mb-8">
                 <p class="snyf-kicker mb-3"><i class="fas fa-bolt"></i> Live demo</p>
                 <h1 class="text-3xl font-bold text-white">Search by intent, mood, and occasion.</h1>
-                <p class="text-gray-400 mt-2">Compare our AI search with traditional keyword search.</p>
+                <p class="text-gray-400 mt-2">Compare our AI search with traditional keyword search on the hosted demo catalog.</p>
                 <div class="inline-flex rounded-lg bg-gray-900 p-1 mt-6 space-x-1">
                     <button id="snyf-search-btn" class="px-6 py-2 text-sm font-semibold rounded-md transition-all duration-200"></button>
                     <button id="normal-search-btn" class="px-6 py-2 text-sm font-semibold rounded-md transition-all duration-200"></button>
@@ -81,8 +81,6 @@
                   resultsCount = document.getElementById('results-count');
             
             const API_BASE_URL = 'https://xydj4rm9eg.execute-api.us-east-1.amazonaws.com', PAGE_SIZE = 12;
-            const API_KEY = localStorage.getItem('snyfApiKey');
-            const COLLECTION_ID = localStorage.getItem('snyfCollectionId');
             let currentSearchMode = 'snyf', currentPage = 1, totalPages = 1, totalItems = 0, lastQuery = '';
 
             const updateToggleUI = () => {
@@ -135,11 +133,10 @@
                 paginationControls.innerHTML = '';
                 try {
                     if (currentSearchMode !== 'snyf') {
-                        if (!API_KEY || !COLLECTION_ID) throw new Error('Sign up and save an API key plus collection in the dashboard first.');
-                        const response = await fetch(`${API_BASE_URL}/search/keyword`, {
+                        const response = await fetch(`${API_BASE_URL}/search/demo/keyword`, {
                             method: 'POST',
-                            headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY },
-                            body: JSON.stringify({ collection_id: COLLECTION_ID, query, top_k: PAGE_SIZE })
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ query })
                         });
                         if (!response.ok) {
                             const error = await response.json().catch(() => ({}));
@@ -148,11 +145,10 @@
                         handleApiResponse(await response.json());
                         return;
                     }
-                    if (!API_KEY || !COLLECTION_ID) throw new Error('Sign up and save an API key plus collection in the dashboard first.');
-                    const response = await fetch(`${API_BASE_URL}/search`, {
+                    const response = await fetch(`${API_BASE_URL}/search/demo`, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY },
-                        body: JSON.stringify({ collection_id: COLLECTION_ID, query, top_k: PAGE_SIZE })
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ query })
                     });
                     if (!response.ok) {
                         const error = await response.json().catch(() => ({}));
@@ -164,7 +160,8 @@
 
             const fetchInitialCatalog = async (page = 1) => {
                 lastQuery = '';
-                resultsContainer.innerHTML = `<p class="col-span-full text-center text-gray-400">Search your uploaded catalog to view products.</p>`;
+                searchInput.value = 'romantic party dress';
+                await performSearch(searchInput.value, page);
                 paginationControls.innerHTML = '';
             };
 

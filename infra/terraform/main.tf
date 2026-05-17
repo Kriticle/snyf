@@ -414,13 +414,21 @@ resource "aws_opensearch_domain" "catalog" {
   engine_version = "OpenSearch_2.13"
 
   cluster_config {
-    instance_type  = var.opensearch_instance_type
-    instance_count = 1
+    instance_type          = var.opensearch_instance_type
+    instance_count         = var.opensearch_instance_count
+    zone_awareness_enabled = var.opensearch_instance_count > 1
+
+    dynamic "zone_awareness_config" {
+      for_each = var.opensearch_instance_count > 1 ? [1] : []
+      content {
+        availability_zone_count = 2
+      }
+    }
   }
 
   ebs_options {
     ebs_enabled = true
-    volume_size = 20
+    volume_size = var.opensearch_volume_size
     volume_type = "gp3"
   }
 
@@ -833,6 +841,7 @@ locals {
     LLM_PROVIDER               = var.llm_provider
     DEMO_RATE_LIMIT_PER_MINUTE = tostring(var.demo_search_rate_limit_per_minute)
     DEMO_TOP_K                 = tostring(var.demo_search_top_k)
+    DEMO_COLLECTION_ID         = var.demo_collection_id
   }
 
   service_secrets = var.openai_api_key_secret_arn == "" ? {} : {

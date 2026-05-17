@@ -49,8 +49,21 @@ variable "assign_public_ip" {
 }
 
 variable "opensearch_instance_type" {
-  type    = string
-  default = "t3.small.search"
+  description = "OpenSearch data node instance type. Vector kNN search needs memory; avoid burstable t3/t4g classes for production-like catalogs."
+  type        = string
+  default     = "r6g.large.search"
+}
+
+variable "opensearch_instance_count" {
+  description = "Number of OpenSearch data nodes. Use at least 2 to avoid single-node kNN latency spikes."
+  type        = number
+  default     = 2
+}
+
+variable "opensearch_volume_size" {
+  description = "OpenSearch EBS volume size in GiB."
+  type        = number
+  default     = 50
 }
 
 variable "attribute_list_object_arns" {
@@ -87,6 +100,12 @@ variable "demo_search_top_k" {
   description = "Fixed result count for public demo search endpoints. Browser callers cannot override this."
   type        = number
   default     = 10
+}
+
+variable "demo_collection_id" {
+  description = "Collection id used by public website demo search endpoints."
+  type        = string
+  default     = "littlebox-catalog-01"
 }
 
 variable "demo_search_throttle_burst_limit" {
