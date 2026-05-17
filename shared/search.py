@@ -432,8 +432,6 @@ def keyword_feature_scores(document: dict[str, Any], query_terms: list[str]) -> 
         "category": document.get("category"),
         "brand": document.get("brand"),
         "description": document.get("description"),
-        "enriched_text": document.get("enriched_text"),
-        "attributes": " ".join(str(value) for value in document.get("attrs", {}).values() if value is not None),
     }
     weighted_hits = 0.0
     max_weight = 0.0
@@ -442,8 +440,6 @@ def keyword_feature_scores(document: dict[str, Any], query_terms: list[str]) -> 
         "category": 2.0,
         "brand": 1.0,
         "description": 2.0,
-        "enriched_text": 2.0,
-        "attributes": 2.5,
     }
     for term in query_terms:
         term_hit = 0.0

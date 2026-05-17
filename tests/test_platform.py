@@ -1033,6 +1033,28 @@ prod_002,coll_a,Structured Blazer,outerwear,https://cdn.example.com/p2.jpg,"[""m
             self.assertGreater(results[0].score, results[1].score)
             self.assertIn("keyword_match", results[0].feature_scores)
 
+    def test_keyword_search_ignores_enriched_text_and_attrs(self) -> None:
+        class StoreWithEnrichedOnlyMatch:
+            def indexed_documents(self, collection_id):
+                return [
+                    {
+                        "product_id": "prod_001",
+                        "name": "Plain Product",
+                        "category": "apparel",
+                        "brand": "Example",
+                        "description": "Customer supplied neutral catalog copy",
+                        "enriched_text": "romantic beach wedding dress",
+                        "attrs": {"occasion": "beach wedding", "aesthetic": "romantic"},
+                        "image_urls": ["https://cdn.example.com/p1.jpg"],
+                    }
+                ]
+
+        results = SearchService(StoreWithEnrichedOnlyMatch()).keyword_search(
+            SearchRequest(collection_id="coll_a", query="beach wedding", top_k=5)
+        )
+
+        self.assertEqual(results, [])
+
     def test_search_api_rejects_top_k_above_limit_as_client_error(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = JsonStore(tmp)

@@ -186,7 +186,6 @@ class AwsStore:
                                         "category^2",
                                         "brand",
                                         "description^2",
-                                        "enriched_text^2",
                                     ],
                                     "type": "best_fields",
                                     "operator": "or",
