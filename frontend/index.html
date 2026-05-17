@@ -104,8 +104,9 @@
                             <button type="submit" class="bg-primary text-white font-semibold px-6 py-3 rounded-r-lg hover:bg-primary/90 transition-colors">Search</button>
                         </div>
                         <div class="mt-3 flex flex-wrap items-center justify-center gap-3 text-sm">
-                            <button type="button" class="sample-query-btn text-primary font-semibold" data-query="romantic party dress">romantic party dress</button>
-                            <button type="button" class="sample-query-btn text-primary font-semibold" data-query="brunch top with soft sleeves">brunch top with soft sleeves</button>
+                            <button type="button" class="sample-query-btn text-primary font-semibold" data-query="beach wedding dress">beach wedding dress</button>
+                            <button type="button" class="sample-query-btn text-primary font-semibold" data-query="romantic night out">romantic night out</button>
+                            <button type="button" class="sample-query-btn text-primary font-semibold" data-query="red long sleeves">red long sleeves</button>
                             <a href="assets/sample-catalog.csv" download class="text-gray-400 hover:text-primary font-semibold">Download sample CSV</a>
                         </div>
                     </form>
@@ -403,7 +404,7 @@
 
                 const fetchInitialCatalog = async () => { 
                     resultsContainer.innerHTML = `<p class="col-span-full text-center text-gray-400">Loading initial catalog items...</p>`; 
-                    await performSearch("dress");
+                    await performSearch("beach wedding dress");
                 };
                 
                 snyfBtn.addEventListener('click', () => { if (currentSearchMode === 'snyf') return; currentSearchMode = 'snyf'; updateToggleUI(); const query = searchInput.value.trim(); if (query) performSearch(query); });
