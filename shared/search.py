@@ -430,16 +430,12 @@ def keyword_feature_scores(document: dict[str, Any], query_terms: list[str]) -> 
     field_texts = {
         "name": document.get("name"),
         "category": document.get("category"),
-        "brand": document.get("brand"),
-        "description": document.get("description"),
     }
     weighted_hits = 0.0
     max_weight = 0.0
     field_weights = {
         "name": 3.0,
         "category": 2.0,
-        "brand": 1.0,
-        "description": 2.0,
     }
     for term in query_terms:
         term_hit = 0.0

@@ -1026,14 +1026,14 @@ prod_002,coll_a,Structured Blazer,outerwear,https://cdn.example.com/p2.jpg,"[""m
             asyncio.run(EnrichmentWorker(store, enrich_fn=fake_enrich).drain_once())
 
             results = SearchService(store).keyword_search(
-                SearchRequest(collection_id="coll_a", query="linen jacket", top_k=2)
+                SearchRequest(collection_id="coll_a", query="linen outerwear", top_k=2)
             )
 
             self.assertEqual(results[0].product_id, "prod_001")
             self.assertGreater(results[0].score, results[1].score)
             self.assertIn("keyword_match", results[0].feature_scores)
 
-    def test_keyword_search_ignores_enriched_text_and_attrs(self) -> None:
+    def test_keyword_search_uses_only_name_and_category(self) -> None:
         class StoreWithEnrichedOnlyMatch:
             def indexed_documents(self, collection_id):
                 return [
@@ -1041,8 +1041,8 @@ prod_002,coll_a,Structured Blazer,outerwear,https://cdn.example.com/p2.jpg,"[""m
                         "product_id": "prod_001",
                         "name": "Plain Product",
                         "category": "apparel",
-                        "brand": "Example",
-                        "description": "Customer supplied neutral catalog copy",
+                        "brand": "Beach Wedding Brand",
+                        "description": "Customer supplied beach wedding dress catalog copy",
                         "enriched_text": "romantic beach wedding dress",
                         "attrs": {"occasion": "beach wedding", "aesthetic": "romantic"},
                         "image_urls": ["https://cdn.example.com/p1.jpg"],

@@ -184,8 +184,6 @@ class AwsStore:
                                     "fields": [
                                         "name^3",
                                         "category^2",
-                                        "brand",
-                                        "description^2",
                                     ],
                                     "type": "best_fields",
                                     "operator": "or",
