@@ -8,6 +8,14 @@ variable "private_subnet_ids" { type = list(string) }
 variable "security_group_ids" { type = list(string) }
 variable "log_group_name" { type = string }
 variable "desired_count" { type = number }
+variable "task_cpu" {
+  type    = number
+  default = 512
+}
+variable "task_memory" {
+  type    = number
+  default = 1024
+}
 variable "environment" { type = map(string) }
 variable "secrets" {
   type    = map(string)

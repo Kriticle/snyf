@@ -797,6 +797,7 @@ module "search_api" {
   security_group_ids = [aws_security_group.service.id]
   log_group_name     = aws_cloudwatch_log_group.services.name
   desired_count      = var.service_desired_count
+  task_memory        = 2048
   environment        = local.service_environment
   secrets            = local.service_secrets
   target_group_arn   = aws_lb_target_group.search_api.arn

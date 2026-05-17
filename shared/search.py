@@ -282,9 +282,12 @@ class SearchService:
                 metrics.steps_ms[name] = elapsed_ms(step_started)
 
         timed_step("validate_top_k", lambda: validate_top_k(request.top_k))
-        documents = timed_step("load_documents", lambda: self.store.indexed_documents(request.collection_id))
-        metrics.document_count = len(documents)
         query_terms = timed_step("tokenize_query", lambda: tokenize_keyword_text(request.query))
+        documents = timed_step(
+            "load_documents",
+            lambda: self._retrieve_keyword_candidates(request.collection_id, request.query, request.top_k),
+        )
+        metrics.document_count = len(documents)
 
         def score_documents() -> list[SearchResult]:
             scored: list[SearchResult] = []
@@ -309,6 +312,12 @@ class SearchService:
         results, metrics = self.keyword_search_with_metrics(request)
         self.last_metrics = metrics
         return results
+
+    def _retrieve_keyword_candidates(self, collection_id: str, query: str, top_k: int) -> list[dict[str, Any]]:
+        keyword_search = getattr(self.store, "keyword_search_documents", None)
+        if keyword_search:
+            return keyword_search(collection_id, query, max(top_k * RETRIEVAL_MULTIPLIER, top_k))
+        return self.store.indexed_documents(collection_id)
 
     def _load_collection_attribute_list(self, collection_id: str):
         config = self.store.get_collection_config(collection_id)

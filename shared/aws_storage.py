@@ -167,6 +167,38 @@ class AwsStore:
         )
         return [hit["_source"] for hit in response.get("hits", {}).get("hits", [])]
 
+    def keyword_search_documents(self, collection_id: str, query: str, limit: int) -> list[dict[str, Any]]:
+        if not self.search or not self.search_index:
+            return self.indexed_documents(collection_id)
+        response = self.search.search(
+            index=self.search_index,
+            body={
+                "size": limit,
+                "query": {
+                    "bool": {
+                        "filter": [{"term": {"collection_id": collection_id}}],
+                        "must": [
+                            {
+                                "multi_match": {
+                                    "query": query,
+                                    "fields": [
+                                        "name^3",
+                                        "category^2",
+                                        "brand",
+                                        "description^2",
+                                        "enriched_text^2",
+                                    ],
+                                    "type": "best_fields",
+                                    "operator": "or",
+                                }
+                            }
+                        ],
+                    }
+                },
+            },
+        )
+        return [hit["_source"] for hit in response.get("hits", {}).get("hits", [])]
+
     def upsert_collection_config(self, config: CollectionConfig) -> None:
         self.collections.put_item(Item=to_dynamo_item(asdict(config)))
 
