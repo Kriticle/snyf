@@ -27,6 +27,7 @@
     </script>
     <style>
         pre { white-space: pre-wrap; word-break: break-word; }
+        .docs-tab-panel[hidden] { display: none; }
     </style>
 </head>
 <body class="bg-gray-950 text-gray-300 min-h-screen">
@@ -82,11 +83,160 @@
             </select>
             <p class="mt-2 text-xs text-gray-500">Required for every upload. Send only the file name, not an S3 URI.</p>
 
-            <pre class="mt-5 rounded bg-gray-950 p-4 text-sm text-gray-200"><code>curl -sS -X POST "$API_URL/collections/coll_ss25/upload" \
+            <div class="docs-tabs mt-5" data-doc-tabs>
+                <div class="flex flex-wrap gap-2 border-b border-gray-800 pb-3" role="tablist" aria-label="Upload examples">
+                    <button type="button" class="docs-tab rounded-md bg-primary px-3 py-2 text-sm font-semibold text-white hover:text-white" data-doc-tab-target="upload-curl" aria-selected="true"><i class="fas fa-terminal mr-2"></i>curl</button>
+                    <button type="button" class="docs-tab rounded-md bg-gray-950 px-3 py-2 text-sm font-semibold text-gray-400 hover:text-white" data-doc-tab-target="upload-python" aria-selected="false"><i class="fab fa-python mr-2"></i>Python</button>
+                    <button type="button" class="docs-tab rounded-md bg-gray-950 px-3 py-2 text-sm font-semibold text-gray-400 hover:text-white" data-doc-tab-target="upload-js" aria-selected="false"><i class="fab fa-js mr-2"></i>JS</button>
+                    <button type="button" class="docs-tab rounded-md bg-gray-950 px-3 py-2 text-sm font-semibold text-gray-400 hover:text-white" data-doc-tab-target="upload-ts" aria-selected="false"><i class="fas fa-code mr-2"></i>TS</button>
+                    <button type="button" class="docs-tab rounded-md bg-gray-950 px-3 py-2 text-sm font-semibold text-gray-400 hover:text-white" data-doc-tab-target="upload-go" aria-selected="false"><i class="fas fa-terminal mr-2"></i>GoLand</button>
+                </div>
+
+                <div id="upload-curl" class="docs-tab-panel" role="tabpanel">
+                    <pre class="mt-4 rounded bg-gray-950 p-4 text-sm text-gray-200"><code>curl -sS -X POST "$API_URL/collections/coll_ss25/upload" \
   -H "x-api-key: $API_KEY" \
   -F "csv_file=@catalog.csv" \
   -F "attribute_list_id=fashion-v1" \
   -F "process_now=false"</code></pre>
+                </div>
+
+                <div id="upload-python" class="docs-tab-panel" role="tabpanel" hidden>
+                    <pre class="mt-4 rounded bg-gray-950 p-4 text-sm text-gray-200"><code>import os
+import requests
+
+API_URL = os.environ["API_URL"]
+API_KEY = os.environ["API_KEY"]
+COLLECTION_ID = os.environ["COLLECTION_ID"]
+
+with open("catalog.csv", "rb") as catalog:
+    response = requests.post(
+        f"{API_URL}/collections/{COLLECTION_ID}/upload",
+        headers={"x-api-key": API_KEY},
+        files={"csv_file": catalog},
+        data={"attribute_list_id": "fashion-v1", "process_now": "false"},
+        timeout=30,
+    )
+
+response.raise_for_status()
+print(response.json())</code></pre>
+                </div>
+
+                <div id="upload-js" class="docs-tab-panel" role="tabpanel" hidden>
+                    <pre class="mt-4 rounded bg-gray-950 p-4 text-sm text-gray-200"><code>const API_URL = "https://xydj4rm9eg.execute-api.us-east-1.amazonaws.com";
+const API_KEY = "YOUR_API_KEY";
+const COLLECTION_ID = "coll_ss25";
+
+async function uploadCatalog(file) {
+  const formData = new FormData();
+  formData.append("csv_file", file);
+  formData.append("attribute_list_id", "fashion-v1");
+  formData.append("process_now", "false");
+
+  const response = await fetch(`${API_URL}/collections/${COLLECTION_ID}/upload`, {
+    method: "POST",
+    headers: { "x-api-key": API_KEY },
+    body: formData
+  });
+
+  if (!response.ok) {
+    throw new Error(`Upload failed: ${response.status}`);
+  }
+
+  return response.json();
+}</code></pre>
+                </div>
+
+                <div id="upload-ts" class="docs-tab-panel" role="tabpanel" hidden>
+                    <pre class="mt-4 rounded bg-gray-950 p-4 text-sm text-gray-200"><code>type UploadResponse = {
+  job_id: string;
+  accepted_rows: number;
+  rejected_rows: number;
+  status: string;
+};
+
+const API_URL = "https://xydj4rm9eg.execute-api.us-east-1.amazonaws.com";
+const API_KEY = "YOUR_API_KEY";
+const COLLECTION_ID = "coll_ss25";
+
+export async function uploadCatalog(file: File): Promise&lt;UploadResponse&gt; {
+  const formData = new FormData();
+  formData.append("csv_file", file);
+  formData.append("attribute_list_id", "fashion-v1");
+  formData.append("process_now", "false");
+
+  const response = await fetch(`${API_URL}/collections/${COLLECTION_ID}/upload`, {
+    method: "POST",
+    headers: { "x-api-key": API_KEY },
+    body: formData
+  });
+
+  if (!response.ok) {
+    throw new Error(`Upload failed: ${response.status}`);
+  }
+
+  return response.json() as Promise&lt;UploadResponse&gt;;
+}</code></pre>
+                </div>
+
+                <div id="upload-go" class="docs-tab-panel" role="tabpanel" hidden>
+                    <pre class="mt-4 rounded bg-gray-950 p-4 text-sm text-gray-200"><code>package main
+
+import (
+	"bytes"
+	"fmt"
+	"io"
+	"mime/multipart"
+	"net/http"
+	"os"
+)
+
+func main() {
+	apiURL := os.Getenv("API_URL")
+	apiKey := os.Getenv("API_KEY")
+	collectionID := os.Getenv("COLLECTION_ID")
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&amp;body)
+
+	file, err := os.Open("catalog.csv")
+	if err != nil {
+		panic(err)
+	}
+	defer file.Close()
+
+	part, err := writer.CreateFormFile("csv_file", "catalog.csv")
+	if err != nil {
+		panic(err)
+	}
+	if _, err := io.Copy(part, file); err != nil {
+		panic(err)
+	}
+
+	writer.WriteField("attribute_list_id", "fashion-v1")
+	writer.WriteField("process_now", "false")
+	writer.Close()
+
+	req, err := http.NewRequest("POST", apiURL+"/collections/"+collectionID+"/upload", &amp;body)
+	if err != nil {
+		panic(err)
+	}
+	req.Header.Set("x-api-key", apiKey)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		panic(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode &gt;= 400 {
+		panic(fmt.Sprintf("upload failed: %s", resp.Status))
+	}
+
+	fmt.Println(resp.Status)
+}</code></pre>
+                </div>
+            </div>
 
             <div class="mt-5 overflow-x-auto">
                 <table class="w-full text-sm">
@@ -160,7 +310,17 @@
             </div>
             <p class="mt-2 text-gray-400">Searches one collection and returns ranked product results with image URLs.</p>
 
-            <pre class="mt-5 rounded bg-gray-950 p-4 text-sm text-gray-200"><code>curl -sS -X POST "$API_URL/search" \
+            <div class="docs-tabs mt-5" data-doc-tabs>
+                <div class="flex flex-wrap gap-2 border-b border-gray-800 pb-3" role="tablist" aria-label="Search examples">
+                    <button type="button" class="docs-tab rounded-md bg-primary px-3 py-2 text-sm font-semibold text-white hover:text-white" data-doc-tab-target="search-curl" aria-selected="true"><i class="fas fa-terminal mr-2"></i>curl</button>
+                    <button type="button" class="docs-tab rounded-md bg-gray-950 px-3 py-2 text-sm font-semibold text-gray-400 hover:text-white" data-doc-tab-target="search-python" aria-selected="false"><i class="fab fa-python mr-2"></i>Python</button>
+                    <button type="button" class="docs-tab rounded-md bg-gray-950 px-3 py-2 text-sm font-semibold text-gray-400 hover:text-white" data-doc-tab-target="search-js" aria-selected="false"><i class="fab fa-js mr-2"></i>JS</button>
+                    <button type="button" class="docs-tab rounded-md bg-gray-950 px-3 py-2 text-sm font-semibold text-gray-400 hover:text-white" data-doc-tab-target="search-ts" aria-selected="false"><i class="fas fa-code mr-2"></i>TS</button>
+                    <button type="button" class="docs-tab rounded-md bg-gray-950 px-3 py-2 text-sm font-semibold text-gray-400 hover:text-white" data-doc-tab-target="search-go" aria-selected="false"><i class="fas fa-terminal mr-2"></i>GoLand</button>
+                </div>
+
+                <div id="search-curl" class="docs-tab-panel" role="tabpanel">
+                    <pre class="mt-4 rounded bg-gray-950 p-4 text-sm text-gray-200"><code>curl -sS -X POST "$API_URL/search" \
   -H "Content-Type: application/json" \
   -H "x-api-key: $API_KEY" \
   -d '{
@@ -168,6 +328,144 @@
     "query": "flowy beach wedding look",
     "top_k": 5
   }'</code></pre>
+                </div>
+
+                <div id="search-python" class="docs-tab-panel" role="tabpanel" hidden>
+                    <pre class="mt-4 rounded bg-gray-950 p-4 text-sm text-gray-200"><code>import os
+import requests
+
+API_URL = os.environ["API_URL"]
+API_KEY = os.environ["API_KEY"]
+
+response = requests.post(
+    f"{API_URL}/search",
+    headers={"Content-Type": "application/json", "x-api-key": API_KEY},
+    json={
+        "collection_id": "coll_ss25",
+        "query": "flowy beach wedding look",
+        "top_k": 5,
+    },
+    timeout=30,
+)
+
+response.raise_for_status()
+print(response.json())</code></pre>
+                </div>
+
+                <div id="search-js" class="docs-tab-panel" role="tabpanel" hidden>
+                    <pre class="mt-4 rounded bg-gray-950 p-4 text-sm text-gray-200"><code>const API_URL = "https://xydj4rm9eg.execute-api.us-east-1.amazonaws.com";
+const API_KEY = "YOUR_API_KEY";
+
+async function searchProducts(query) {
+  const response = await fetch(`${API_URL}/search`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": API_KEY
+    },
+    body: JSON.stringify({
+      collection_id: "coll_ss25",
+      query,
+      top_k: 5
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`Search failed: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+searchProducts("flowy beach wedding look").then(console.log);</code></pre>
+                </div>
+
+                <div id="search-ts" class="docs-tab-panel" role="tabpanel" hidden>
+                    <pre class="mt-4 rounded bg-gray-950 p-4 text-sm text-gray-200"><code>type SearchResult = {
+  product_id: string;
+  name: string;
+  image_urls: string[];
+  score: number;
+};
+
+type SearchResponse = {
+  collection_id: string;
+  query: string;
+  results: SearchResult[];
+};
+
+const API_URL = "https://xydj4rm9eg.execute-api.us-east-1.amazonaws.com";
+const API_KEY = "YOUR_API_KEY";
+
+export async function searchProducts(query: string, topK = 5): Promise&lt;SearchResponse&gt; {
+  const response = await fetch(`${API_URL}/search`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": API_KEY
+    },
+    body: JSON.stringify({
+      collection_id: "coll_ss25",
+      query,
+      top_k: topK
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`Search failed: ${response.status}`);
+  }
+
+  return response.json() as Promise&lt;SearchResponse&gt;;
+}</code></pre>
+                </div>
+
+                <div id="search-go" class="docs-tab-panel" role="tabpanel" hidden>
+                    <pre class="mt-4 rounded bg-gray-950 p-4 text-sm text-gray-200"><code>package main
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"os"
+)
+
+func main() {
+	apiURL := os.Getenv("API_URL")
+	apiKey := os.Getenv("API_KEY")
+
+	body, _ := json.Marshal(map[string]any{
+		"collection_id": "coll_ss25",
+		"query":         "flowy beach wedding look",
+		"top_k":         5,
+	})
+
+	req, err := http.NewRequest("POST", apiURL+"/search", bytes.NewReader(body))
+	if err != nil {
+		panic(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-api-key", apiKey)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		panic(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode &gt;= 400 {
+		panic(fmt.Sprintf("search failed: %s", resp.Status))
+	}
+
+	var result map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&amp;result); err != nil {
+		panic(err)
+	}
+
+	fmt.Printf("%+v\n", result)
+}</code></pre>
+                </div>
+            </div>
 
             <div class="mt-5 overflow-x-auto">
                 <table class="w-full text-sm">
@@ -279,5 +577,30 @@
     <footer class="border-t border-gray-800 py-8 text-center text-sm text-gray-600">
         © 2025 Snyf. All rights reserved.
     </footer>
+    <script>
+        document.querySelectorAll('[data-doc-tabs]').forEach((tabGroup) => {
+            const tabs = Array.from(tabGroup.querySelectorAll('[data-doc-tab-target]'));
+            const panels = Array.from(tabGroup.querySelectorAll('.docs-tab-panel'));
+
+            tabs.forEach((tab) => {
+                tab.addEventListener('click', () => {
+                    const targetId = tab.dataset.docTabTarget;
+
+                    tabs.forEach((item) => {
+                        const isActive = item === tab;
+                        item.setAttribute('aria-selected', String(isActive));
+                        item.classList.toggle('bg-primary', isActive);
+                        item.classList.toggle('text-white', isActive);
+                        item.classList.toggle('bg-gray-950', !isActive);
+                        item.classList.toggle('text-gray-400', !isActive);
+                    });
+
+                    panels.forEach((panel) => {
+                        panel.hidden = panel.id !== targetId;
+                    });
+                });
+            });
+        });
+    </script>
 </body>
 </html>
