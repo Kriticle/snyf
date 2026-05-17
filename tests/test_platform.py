@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 
 from services.enrichment_worker.worker import EnrichmentWorker
 from services.enrichment_worker.worker import parse_enrichment_response
-from services.ingestion_api.main import create_app
+from services.ingestion_api.main import count_csv_rows, create_app
 from services.search_api.main import create_app as create_search_app
 from shared.attribute_loader import load_attribute_list
 from shared.auth import AuthError, AuthService
@@ -87,6 +87,20 @@ prod_003,coll_a,Non HTTPS,dresses,http://cdn.example.com/p3.jpg,"[""occasion""]"
             self.assertTrue(new_key["api_key"].startswith("fep_"))
             self.assertEqual(auth.authenticate_api_key(new_key["api_key"]).customer_id, signup["customer"]["customer_id"])
             self.assertEqual(len(auth.list_api_keys(login["refresh_token"])), 2)
+            self.assertEqual(
+                [key["status"] for key in auth.list_api_keys(login["refresh_token"])].count("ACTIVE"),
+                1,
+            )
+            with self.assertRaises(AuthError):
+                auth.authenticate_api_key(signup["api_key"])
+
+    def test_count_csv_rows_excludes_header_for_plan_limits(self) -> None:
+        csv_text = "product_id,name,image_urls\n" + "\n".join(
+            f"prod_{index},Item {index},https://cdn.example.com/{index}.jpg"
+            for index in range(1000)
+        )
+
+        self.assertEqual(count_csv_rows(csv_text), 1000)
 
     def test_plan_limits_fail_with_upgrade_message(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -218,7 +232,7 @@ prod_001,Linen Trouser,bottoms,https://cdn.example.com/p1.jpg,Cream linen wide l
                 upload = client.post(
                     "/collections/coll_a/upload",
                     headers={"x-api-key": owner["api_key"]},
-                    data={"attribute_list_id": "attributes", "process_now": "false"},
+                    data={"attribute_list_id": "attributes"},
                     files={"csv_file": ("catalog.csv", csv_text, "text/csv")},
                 )
 

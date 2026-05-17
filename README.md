@@ -122,7 +122,7 @@ product_id,name,image_urls
 Helpful optional columns:
 
 ```text
-category,description,price,currency,brand,attributes,_deleted
+category,description,price,currency,brand,_deleted
 ```
 
 Rules:
@@ -130,6 +130,7 @@ Rules:
 - `image_urls` must contain public HTTPS image URLs.
 - Pick one dashboard attribute list for the collection, for example `fashion-v1`.
 - Send only the attribute-list file name, not an S3 URI.
+- Do not include `collection_id` in the CSV; the upload URL/dashboard collection field supplies it.
 - Upload one collection at a time: the URL collection is the collection being indexed.
 - After upload, poll the returned `job_id` until status is `READY`, then search the same `collection_id`.
 
@@ -160,7 +161,6 @@ EOF
 curl -sS -X POST "$API_URL/collections/$COLLECTION_ID/upload" \
   -H "x-api-key: $API_KEY" \
   -F attribute_list_id=smoke-fashion-v1 \
-  -F process_now=false \
   -F csv_file=@/tmp/fashion_catalog.csv | jq
 
 sleep 45
@@ -293,7 +293,6 @@ Local upload:
 curl -s -X POST "$INGESTION_URL/collections/coll_ss25/upload" \
   -H "x-api-key: $API_KEY" \
   -F attribute_list_id=fashion-v1 \
-  -F process_now=true \
   -F csv_file=@examples/catalog.csv
 ```
 
@@ -303,7 +302,6 @@ Production upload:
 curl -s -X POST "$INGESTION_URL/collections/coll_ss25/upload" \
   -H "x-api-key: $API_KEY" \
   -F attribute_list_id=fashion-v1 \
-  -F process_now=false \
   -F csv_file=@examples/catalog.csv
 ```
 
@@ -538,15 +536,20 @@ Current defaults:
 FREE:
   search_requests_per_month = 100
   ingestion_rows_per_month = 1000
+  active_api_keys = 1
 
 PRO:
   search_requests_per_month = 10000
   ingestion_rows_per_month = 100000
+  active_api_keys = 5
 
 ENTERPRISE:
   search_requests_per_month = 1000000
   ingestion_rows_per_month = 10000000
+  active_api_keys = 25
 ```
+
+Ingestion row limits count product rows only. The CSV header is not counted. Customers can regenerate API keys, but each plan caps active keys. When a customer creates a new key at the active-key limit, the oldest active key is deactivated.
 
 Usage is tracked monthly in `UsageCounters`.
 

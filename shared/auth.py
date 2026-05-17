@@ -8,6 +8,7 @@ import time
 from dataclasses import asdict
 
 from shared.models import ApiKey, Customer, Session, utc_now
+from shared.plans import plan_limits
 from shared.storage import JsonStore
 
 
@@ -61,6 +62,7 @@ class AuthService:
         customer = self.store.get_customer(customer_id)
         if customer is None:
             raise AuthError("Customer not found.")
+        self._enforce_active_api_key_limit(customer)
         raw_api_key = f"fep_{secrets.token_urlsafe(32)}"
         api_key = ApiKey(
             api_key_id=f"key_{secrets.token_urlsafe(12)}",
@@ -71,6 +73,20 @@ class AuthService:
         )
         self.store.upsert_api_key(api_key)
         return api_key, raw_api_key
+
+    def _enforce_active_api_key_limit(self, customer: Customer) -> None:
+        limit = plan_limits(customer.plan)["active_api_keys"]
+        active_keys = [
+            api_key
+            for api_key in self.store.api_keys_for_customer(customer.customer_id)
+            if api_key.status == "ACTIVE"
+        ]
+        if len(active_keys) < limit:
+            return
+        active_keys.sort(key=lambda api_key: api_key.created_at)
+        for api_key in active_keys[: len(active_keys) - limit + 1]:
+            api_key.status = "INACTIVE"
+            self.store.upsert_api_key(api_key)
 
     def list_api_keys(self, refresh_token: str | None) -> list[dict]:
         customer = self.authenticate_session(refresh_token)

@@ -96,8 +96,7 @@
                     <pre class="mt-4 rounded bg-gray-950 p-4 text-sm text-gray-200"><code>curl -sS -X POST "$API_URL/collections/coll_ss25/upload" \
   -H "x-api-key: $API_KEY" \
   -F "csv_file=@catalog.csv" \
-  -F "attribute_list_id=fashion-v1" \
-  -F "process_now=false"</code></pre>
+  -F "attribute_list_id=fashion-v1"</code></pre>
                 </div>
 
                 <div id="upload-python" class="docs-tab-panel" role="tabpanel" hidden>
@@ -113,7 +112,7 @@ with open("catalog.csv", "rb") as catalog:
         f"{API_URL}/collections/{COLLECTION_ID}/upload",
         headers={"x-api-key": API_KEY},
         files={"csv_file": catalog},
-        data={"attribute_list_id": "fashion-v1", "process_now": "false"},
+        data={"attribute_list_id": "fashion-v1"},
         timeout=30,
     )
 
@@ -130,7 +129,6 @@ async function uploadCatalog(file) {
   const formData = new FormData();
   formData.append("csv_file", file);
   formData.append("attribute_list_id", "fashion-v1");
-  formData.append("process_now", "false");
 
   const response = await fetch(`${API_URL}/collections/${COLLECTION_ID}/upload`, {
     method: "POST",
@@ -162,7 +160,6 @@ export async function uploadCatalog(file: File): Promise&lt;UploadResponse&gt; {
   const formData = new FormData();
   formData.append("csv_file", file);
   formData.append("attribute_list_id", "fashion-v1");
-  formData.append("process_now", "false");
 
   const response = await fetch(`${API_URL}/collections/${COLLECTION_ID}/upload`, {
     method: "POST",
@@ -213,7 +210,6 @@ func main() {
 	}
 
 	writer.WriteField("attribute_list_id", "fashion-v1")
-	writer.WriteField("process_now", "false")
 	writer.Close()
 
 	req, err := http.NewRequest("POST", apiURL+"/collections/"+collectionID+"/upload", &amp;body)
@@ -246,12 +242,11 @@ func main() {
                     <tbody class="divide-y divide-gray-800">
                         <tr><td class="py-2 font-mono text-primary">csv_file</td><td class="py-2">Yes</td><td class="py-2">CSV file with product rows.</td></tr>
                         <tr><td class="py-2 font-mono text-primary">attribute_list_id</td><td class="py-2">Yes</td><td class="py-2">Attribute-list file name, not an S3 URI.</td></tr>
-                        <tr><td class="py-2 font-mono text-primary">process_now</td><td class="py-2">No</td><td class="py-2">Use false for queued production ingestion.</td></tr>
                     </tbody>
                 </table>
             </div>
 
-            <p class="mt-5 text-sm text-gray-400">Required CSV columns: <code class="text-primary">product_id</code>, <code class="text-primary">name</code>, <code class="text-primary">image_urls</code>. The CSV does not need <code class="text-primary">collection_id</code>; the upload URL supplies it. If present, <code class="text-primary">collection_id</code> must match the URL collection.</p>
+            <p class="mt-5 text-sm text-gray-400">Required CSV columns: <code class="text-primary">product_id</code>, <code class="text-primary">name</code>, <code class="text-primary">image_urls</code>. Do not include <code class="text-primary">collection_id</code> in the CSV; the upload URL supplies it.</p>
             <p class="mt-2 text-sm text-gray-400">Optional CSV columns: <code class="text-primary">category</code>, <code class="text-primary">description</code>, <code class="text-primary">price</code>, <code class="text-primary">currency</code>, <code class="text-primary">brand</code>, <code class="text-primary">_deleted</code>. Use <code class="text-primary">attribute_list_id</code> in the upload form/API instead of an <code class="text-primary">attributes</code> CSV column.</p>
 
             <h3 class="font-semibold text-white mt-6 mb-2">Response</h3>
@@ -557,6 +552,24 @@ func main() {
 
         <section class="mb-10 rounded-lg border border-gray-800 bg-gray-900 p-6">
             <h2 class="text-2xl font-bold text-white">Errors And Limits</h2>
+            <div class="mt-5 overflow-x-auto">
+                <table class="w-full min-w-[640px] text-left text-sm text-gray-300">
+                    <thead class="text-xs uppercase tracking-wide text-gray-500">
+                        <tr>
+                            <th class="py-2 pr-4">Plan</th>
+                            <th class="py-2 pr-4">Searches / month</th>
+                            <th class="py-2 pr-4">Ingestion rows / month</th>
+                            <th class="py-2 pr-4">Active API keys</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-800">
+                        <tr><td class="py-3 pr-4 font-mono text-primary">FREE</td><td class="py-3 pr-4">100</td><td class="py-3 pr-4">1,000</td><td class="py-3 pr-4">1</td></tr>
+                        <tr><td class="py-3 pr-4 font-mono text-primary">PRO</td><td class="py-3 pr-4">10,000</td><td class="py-3 pr-4">100,000</td><td class="py-3 pr-4">5</td></tr>
+                        <tr><td class="py-3 pr-4 font-mono text-primary">ENTERPRISE</td><td class="py-3 pr-4">1,000,000</td><td class="py-3 pr-4">10,000,000</td><td class="py-3 pr-4">25</td></tr>
+                    </tbody>
+                </table>
+                <p class="mt-3 text-sm text-gray-500">CSV headers are not counted toward ingestion row limits. API keys can be regenerated, but each plan caps the number of active keys.</p>
+            </div>
             <div class="mt-5 grid md:grid-cols-2 gap-5">
                 <div>
                     <h3 class="font-semibold text-white mb-2">Error Shape</h3>

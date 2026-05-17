@@ -192,7 +192,6 @@ Form fields:
 | `csv_file` | Yes | CSV file containing products |
 | `attribute_list_id` | Yes for production | Attribute-list file name, for example `fashion-v1` or `fashion-v1.json`. The backend resolves this under the configured attribute-list bucket/prefix. |
 | `attributes` | Local/dev fallback | Inline comma-separated or JSON array of attributes |
-| `process_now` | Optional | Local/dev helper. In production use `false`; ECS worker processes SQS. |
 
 Required CSV columns:
 
@@ -203,10 +202,10 @@ product_id,name,image_urls
 Optional CSV columns:
 
 ```text
-collection_id,category,description,price,currency,brand,attributes,_deleted
+category,description,price,currency,brand,_deleted
 ```
 
-The upload path collection is the source of truth. If a CSV includes `collection_id`, it must match `/collections/{collection_id}/upload`; otherwise the backend fills it from the path.
+The upload path collection is the source of truth. Do not include `collection_id` in the CSV.
 
 Attribute-list example:
 
@@ -227,7 +226,6 @@ Example:
 curl -sS -X POST "$API_URL/collections/coll_ss25/upload" \
   -H "x-api-key: $API_KEY" \
   -F attribute_list_id=fashion-v1 \
-  -F process_now=false \
   -F csv_file=@catalog.csv
 ```
 
@@ -269,7 +267,7 @@ Notes:
 - Product images are not copied into our S3 bucket. The CSV supplies public image URLs.
 - The worker downloads those URLs during enrichment.
 - `image_urls` are stored on the product record and denormalized into the OpenSearch document so search can render product cards without a second lookup.
-- The upload path owns the collection. CSV `collection_id` is optional; when present it must match the path.
+- The upload path owns the collection. Do not include `collection_id` in the CSV.
 
 ## Ingestion Job Status
 
@@ -468,11 +466,13 @@ Plan limits are enforced for protected ingestion and search requests.
 
 Current defaults:
 
-| Plan | Search requests/month | Ingestion rows/month |
-| --- | ---: | ---: |
-| `FREE` | 100 | 1,000 |
-| `PRO` | 10,000 | 100,000 |
-| `ENTERPRISE` | 1,000,000 | 10,000,000 |
+| Plan | Search requests/month | Ingestion rows/month | Active API keys |
+| --- | ---: | ---: | ---: |
+| `FREE` | 100 | 1,000 | 1 |
+| `PRO` | 10,000 | 100,000 | 5 |
+| `ENTERPRISE` | 1,000,000 | 10,000,000 | 25 |
+
+Ingestion row limits count product rows only. The CSV header is not counted. API keys can be regenerated, but each plan caps the number of active keys; when the cap is reached, the oldest active key is deactivated.
 
 Limit error example:
 

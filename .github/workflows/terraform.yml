@@ -11,6 +11,16 @@ on:
       - "infra/terraform/**"
       - ".github/workflows/terraform.yml"
   workflow_dispatch:
+    inputs:
+      apply:
+        description: "Apply the Terraform plan after the plan job succeeds."
+        required: true
+        type: boolean
+        default: false
+
+concurrency:
+  group: terraform-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -93,7 +103,7 @@ jobs:
           retention-days: 5
 
   apply:
-    if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/mainline') && github.event_name != 'pull_request' && needs.plan.outputs.plan_created == 'true'
+    if: github.event_name == 'workflow_dispatch' && inputs.apply == true && needs.plan.outputs.plan_created == 'true'
     needs: plan
     runs-on: ubuntu-latest
     environment: production

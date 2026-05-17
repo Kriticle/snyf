@@ -102,7 +102,7 @@ def create_app(data_dir: str = "data"):
         x_api_key: str | None = Header(default=None),
         attribute_list_id: str | None = Form(None),
         attributes: str | None = Form(None),
-        process_now: bool = Form(True),
+        process_now: bool = Form(False),
     ):
         customer = authenticate_request(auth_service, x_api_key)
         existing_collection = store.get_collection_config(collection_id)
@@ -285,7 +285,9 @@ def bearer_token(authorization: str | None) -> str | None:
 
 
 def count_csv_rows(csv_text: str) -> int:
-    return sum(1 for _ in csv.DictReader(StringIO(csv_text)))
+    rows = csv.reader(StringIO(csv_text))
+    next(rows, None)
+    return sum(1 for row in rows if any(cell.strip() for cell in row))
 
 
 if __name__ == "__main__":
