@@ -74,6 +74,7 @@ class JsonStore:
             "product_id": record.product_id,
             "enriched_text": record.enriched_text,
             "embedding": record.embedding,
+            "attribute_embeddings": record.attribute_embeddings,
             "attrs": record.enriched_attrs,
             "image_urls": record.image_urls,
             "category": record.category,

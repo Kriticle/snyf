@@ -16,9 +16,10 @@ from services.search_api.main import create_app as create_search_app
 from shared.attribute_loader import load_attribute_list
 from shared.auth import AuthError, AuthService
 from shared.csv_ingestion import CsvIngestionService
-from shared.models import CollectionConfig, SearchRequest
+from shared.models import CollectionConfig, ProductRecord, ProductStatus, SearchRequest
 from shared.plans import PlanLimitError, UsageService
 from shared.search import SearchService
+from shared.search_cache import NullSearchCache
 from shared.storage import JsonStore
 
 
@@ -149,6 +150,86 @@ prod_003,coll_a,Non HTTPS,dresses,http://cdn.example.com/p3.jpg,"[""occasion""]"
             self.assertGreaterEqual(results[0].score, 0.0)
             self.assertLessEqual(results[0].score, 1.0)
             self.assertIn("_retrieval_semantic", results[0].feature_scores)
+
+    def test_worker_stores_attribute_embeddings_for_indexed_documents(self) -> None:
+        async def fake_enrich(product_id, metadata, image_bytes, attribute_schema):
+            return json.dumps({"occasion": "beach wedding", "style_mood": "flowy resort"})
+
+        def fake_embed(text):
+            return [1.0, 0.0]
+
+        def fake_embed_many(texts):
+            return [[float(index + 1), 0.0] for index, _ in enumerate(texts)]
+
+        csv_text = """product_id,collection_id,name,category,image_urls,description,price
+prod_001,coll_a,Look One,looks,https://cdn.example.com/p1.jpg,"Soft draped outfit",100
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            store = JsonStore(tmp)
+            CsvIngestionService(
+                store,
+                "cust_a",
+                attribute_list_uri=self.write_attribute_file(tmp, '{"attributes":["occasion","style_mood"]}'),
+            ).ingest_csv(csv_text)
+            asyncio.run(
+                EnrichmentWorker(
+                    store,
+                    enrich_fn=fake_enrich,
+                    embed_fn=fake_embed,
+                    embed_many_fn=fake_embed_many,
+                ).drain_once()
+            )
+
+            record = store.get_record("coll_a", "prod_001")
+            indexed = store.indexed_documents("coll_a")[0]
+
+            self.assertEqual(sorted(record.attribute_embeddings), ["occasion", "style_mood"])
+            self.assertEqual(sorted(indexed["attribute_embeddings"]), ["occasion", "style_mood"])
+
+    def test_search_uses_stored_product_attribute_embeddings(self) -> None:
+        seen_texts: list[str] = []
+
+        def fake_embed(text):
+            seen_texts.append(text)
+            if text == "occasion: beach wedding":
+                return [1.0, 0.0]
+            return [0.5, 0.5]
+
+        def fake_query_parser(query, available_attributes):
+            return json.dumps({"attributes": {"occasion": "beach wedding"}, "hard_filters": {}})
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = JsonStore(tmp)
+            store.upsert_collection_config(
+                CollectionConfig(
+                    collection_id="coll_a",
+                    customer_id="cust_a",
+                    attribute_list_id="attributes",
+                    attribute_list_uri=self.write_attribute_file(tmp, '{"attributes":["occasion"]}'),
+                )
+            )
+            record = ProductRecord(
+                customer_id="cust_a",
+                collection_id="coll_a",
+                product_id="prod_001",
+                raw_metadata={"name": "Look One"},
+                image_urls=["https://cdn.example.com/p1.jpg"],
+                attribute_schema=["occasion"],
+                enriched_attrs={"occasion": "product side value should not be embedded"},
+                enriched_text="Look One occasion beach wedding",
+                embedding=[1.0, 0.0],
+                attribute_embeddings={"occasion": [1.0, 0.0]},
+                status=ProductStatus.ENRICHED,
+            )
+            store.upsert_index(record)
+
+            results = SearchService(store, embed_fn=fake_embed, query_attribute_fn=fake_query_parser).search_sync(
+                SearchRequest(collection_id="coll_a", query="beach wedding", top_k=1)
+            )
+
+            self.assertEqual(results[0].product_id, "prod_001")
+            self.assertIn("occasion: beach wedding", seen_texts)
+            self.assertNotIn("occasion: product side value should not be embedded", seen_texts)
 
     def test_api_level_attributes_override_csv_attributes(self) -> None:
         csv_text = """product_id,collection_id,name,category,image_urls,attributes,description,price
@@ -672,6 +753,57 @@ prod_002,coll_a,Look Two,looks,https://cdn.example.com/p2.jpg,"[""occasion"",""s
             self.assertIn("occasion", results[0].feature_scores)
             self.assertIn("style_mood", results[0].feature_scores)
 
+    def test_search_uses_store_vector_retrieval_when_available(self) -> None:
+        class VectorStore(JsonStore):
+            def __init__(self, root):
+                super().__init__(root)
+                self.vector_calls = 0
+
+            def indexed_documents(self, collection_id):
+                raise AssertionError("search should use vector_search_documents instead")
+
+            def vector_search_documents(self, collection_id, query_vector, limit):
+                self.vector_calls += 1
+                return [
+                    {
+                        "collection_id": collection_id,
+                        "customer_id": "cust_a",
+                        "product_id": "prod_001",
+                        "name": "Look One",
+                        "image_urls": ["https://cdn.example.com/p1.jpg"],
+                        "attrs": {"occasion": "beach wedding"},
+                        "attribute_embeddings": {"occasion": [1.0, 0.0]},
+                        "embedding": [1.0, 0.0],
+                    }
+                ]
+
+        def fake_embed(text):
+            return [1.0, 0.0]
+
+        def fake_query_parser(query, available_attributes):
+            return json.dumps({"attributes": {"occasion": "beach wedding"}, "hard_filters": {}})
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = VectorStore(tmp)
+            store.upsert_collection_config(
+                CollectionConfig(
+                    collection_id="coll_a",
+                    customer_id="cust_a",
+                    attribute_list_id="attributes",
+                    attribute_list_uri=self.write_attribute_file(tmp, '{"attributes":["occasion"]}'),
+                )
+            )
+
+            results, metrics = SearchService(
+                store,
+                embed_fn=fake_embed,
+                query_attribute_fn=fake_query_parser,
+            ).search_with_metrics(SearchRequest(collection_id="coll_a", query="beach wedding", top_k=1))
+
+            self.assertEqual(results[0].product_id, "prod_001")
+            self.assertEqual(store.vector_calls, 1)
+            self.assertIn("vector_retrieve_documents", metrics.steps_ms)
+
     def test_search_api_returns_latency_metrics_and_reuses_embedding_cache(self) -> None:
         async def fake_enrich(product_id, metadata, image_bytes, attribute_schema):
             return json.dumps({"style_mood": "relaxed beach look"})
@@ -715,6 +847,92 @@ prod_002,coll_a,Look Two,looks,https://cdn.example.com/p2.jpg,"[""style_mood""]"
             self.assertEqual(metrics.candidate_count, 2)
             self.assertGreater(metrics.embedding_cache_hits, 0)
             self.assertLessEqual(metrics.embedding_calls, 3)
+
+    def test_search_uses_persistent_cache_for_embeddings_and_query_parse(self) -> None:
+        class MemorySearchCache(NullSearchCache):
+            def __init__(self):
+                self.embeddings = {}
+                self.query_parses = {}
+
+            def get_embedding(self, text, model):
+                return self.embeddings.get((model, text))
+
+            def get_embeddings(self, texts, model):
+                return {text: self.embeddings[(model, text)] for text in texts if (model, text) in self.embeddings}
+
+            def set_embedding(self, text, model, vector):
+                self.embeddings[(model, text)] = vector
+
+            def set_embeddings(self, values, model):
+                for text, vector in values.items():
+                    self.embeddings[(model, text)] = vector
+
+            def get_query_parse(self, query, attribute_namespace, model):
+                return self.query_parses.get((model, attribute_namespace, query))
+
+            def set_query_parse(self, query, attribute_namespace, model, parsed):
+                self.query_parses[(model, attribute_namespace, query)] = parsed
+
+        calls = {"embed": 0, "parse": 0}
+
+        def fake_embed(text):
+            calls["embed"] += 1
+            return [1.0, 0.0] if "beach" in text else [0.0, 1.0]
+
+        def fake_query_parser(query, available_attributes):
+            calls["parse"] += 1
+            return json.dumps({"attributes": {"occasion": "beach wedding"}, "hard_filters": {}})
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = JsonStore(tmp)
+            store.upsert_collection_config(
+                CollectionConfig(
+                    collection_id="coll_a",
+                    customer_id="cust_a",
+                    attribute_list_id="attributes",
+                    attribute_list_uri=self.write_attribute_file(tmp, '{"attributes":["occasion"]}'),
+                )
+            )
+            record = ProductRecord(
+                collection_id="coll_a",
+                customer_id="cust_a",
+                product_id="prod_001",
+                image_urls=["https://cdn.example.com/p1.jpg"],
+                raw_metadata={"name": "Beach Dress"},
+                enriched_attrs={"occasion": "beach wedding"},
+                attribute_schema=["occasion"],
+                enriched_text="occasion: beach wedding",
+                embedding=[1.0, 0.0],
+                attribute_embeddings={"occasion": [1.0, 0.0]},
+                status=ProductStatus.ENRICHED,
+            )
+            store.upsert_index(record)
+            cache = MemorySearchCache()
+
+            first_service = SearchService(
+                store,
+                embed_fn=fake_embed,
+                query_attribute_fn=fake_query_parser,
+                search_cache=cache,
+            )
+            first_service.search_with_metrics(SearchRequest(collection_id="coll_a", query="beach wedding", top_k=1))
+            first_calls = dict(calls)
+
+            second_service = SearchService(
+                store,
+                embed_fn=fake_embed,
+                query_attribute_fn=fake_query_parser,
+                search_cache=cache,
+            )
+            _, metrics = second_service.search_with_metrics(
+                SearchRequest(collection_id="coll_a", query="beach wedding", top_k=1)
+            )
+
+            self.assertGreater(first_calls["embed"], 0)
+            self.assertEqual(calls["embed"], first_calls["embed"])
+            self.assertEqual(calls["parse"], first_calls["parse"])
+            self.assertEqual(metrics.embedding_calls, 0)
+            self.assertGreater(metrics.embedding_cache_hits, 0)
 
     def test_attribute_list_weights_are_used_when_llm_omits_weights(self) -> None:
         async def fake_enrich(product_id, metadata, image_bytes, attribute_schema):

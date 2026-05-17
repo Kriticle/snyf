@@ -284,6 +284,33 @@ resource "aws_dynamodb_table" "usage_counters" {
   }
 }
 
+resource "aws_dynamodb_table" "search_cache" {
+  name                        = "${local.name}-search-cache"
+  billing_mode                = "PAY_PER_REQUEST"
+  hash_key                    = "cache_key"
+  deletion_protection_enabled = true
+
+  attribute {
+    name = "cache_key"
+    type = "S"
+  }
+
+  ttl {
+    attribute_name = "expires_at"
+    enabled        = true
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  tags = local.tags
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
 resource "aws_dynamodb_table" "ingestion_jobs" {
   name                        = "${local.name}-ingestion-jobs"
   billing_mode                = "PAY_PER_REQUEST"
@@ -638,7 +665,9 @@ resource "aws_iam_role_policy" "app_access" {
           "dynamodb:UpdateItem",
           "dynamodb:DeleteItem",
           "dynamodb:Query",
-          "dynamodb:Scan"
+          "dynamodb:Scan",
+          "dynamodb:BatchGetItem",
+          "dynamodb:BatchWriteItem"
         ]
         Resource = [
           aws_dynamodb_table.product_enrichments.arn,
@@ -653,6 +682,7 @@ resource "aws_iam_role_policy" "app_access" {
           "${aws_dynamodb_table.api_keys.arn}/index/*",
           aws_dynamodb_table.usage_counters.arn,
           "${aws_dynamodb_table.usage_counters.arn}/index/*",
+          aws_dynamodb_table.search_cache.arn,
           aws_dynamodb_table.ingestion_jobs.arn,
           "${aws_dynamodb_table.ingestion_jobs.arn}/index/*",
           aws_dynamodb_table.ingestion_job_errors.arn
@@ -790,6 +820,8 @@ locals {
     SESSIONS_TABLE_NAME        = aws_dynamodb_table.sessions.name
     API_KEYS_TABLE_NAME        = aws_dynamodb_table.api_keys.name
     USAGE_TABLE_NAME           = aws_dynamodb_table.usage_counters.name
+    SEARCH_CACHE_TABLE_NAME    = aws_dynamodb_table.search_cache.name
+    SEARCH_CACHE_TTL_SECONDS   = tostring(60 * 60 * 24 * 30)
     JOBS_TABLE_NAME            = aws_dynamodb_table.ingestion_jobs.name
     JOB_ERRORS_TABLE_NAME      = aws_dynamodb_table.ingestion_job_errors.name
     PRODUCT_QUEUE_URL          = aws_sqs_queue.product_jobs.url
@@ -797,7 +829,7 @@ locals {
     ATTRIBUTE_LIST_BUCKET      = aws_s3_bucket.uploads.bucket
     ATTRIBUTE_LIST_PREFIX      = "attributes"
     OPENSEARCH_ENDPOINT        = "https://${aws_opensearch_domain.catalog.endpoint}"
-    DEFAULT_VECTOR_INDEX       = "${local.name}-products"
+    DEFAULT_VECTOR_INDEX       = "${local.name}-products-v2"
     LLM_PROVIDER               = var.llm_provider
     DEMO_RATE_LIMIT_PER_MINUTE = tostring(var.demo_search_rate_limit_per_minute)
     DEMO_TOP_K                 = tostring(var.demo_search_top_k)

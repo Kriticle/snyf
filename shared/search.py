@@ -1,22 +1,31 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import time
+from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
+from shared.attribute_embeddings import attribute_embedding_text
 from functions.providers import embed_fn as default_embed_fn
 from functions.providers import embed_many_fn as default_embed_many_fn
 from functions.providers import query_attribute_fn as default_query_attribute_fn
 from shared.attribute_loader import load_attribute_list
 from shared.models import SearchRequest, SearchResult
+from shared.search_cache import (
+    NullSearchCache,
+    attribute_namespace,
+    create_search_cache_from_environment,
+)
 from shared.storage import JsonStore
 from shared.vector_math import cosine_similarity, normalize_cosine
 
 MAX_TOP_K = 100
 RETRIEVAL_MULTIPLIER = 5
+EMBEDDING_CACHE_MAX_ITEMS = 4096
 
 EmbedFn = Callable[[str], list[float]]
 EmbedManyFn = Callable[[list[str]], list[list[float]]]
@@ -56,6 +65,7 @@ class SearchService:
         embed_fn: EmbedFn | None = None,
         embed_many_fn: EmbedManyFn | None = None,
         query_attribute_fn: QueryAttributeFn | None = None,
+        search_cache: NullSearchCache | None = None,
     ) -> None:
         self.store = store
         self.embed_fn = embed_fn or sync_embed
@@ -66,7 +76,9 @@ class SearchService:
         else:
             self.embed_many_fn = sync_embed_many
         self.query_attribute_fn = query_attribute_fn or sync_extract_query_attributes
+        self.search_cache = search_cache or create_search_cache_from_environment()
         self.last_metrics = SearchMetrics()
+        self.embedding_cache: OrderedDict[str, list[float]] = OrderedDict()
 
     def search(self, request: SearchRequest) -> list[SearchResult]:
         results, metrics = self.search_with_metrics(request)
@@ -76,7 +88,6 @@ class SearchService:
     def search_with_metrics(self, request: SearchRequest) -> tuple[list[SearchResult], SearchMetrics]:
         metrics = SearchMetrics()
         started_at = time.perf_counter()
-        embedding_cache: dict[str, list[float]] = {}
 
         def timed_step(name: str, fn):
             step_started = time.perf_counter()
@@ -86,20 +97,27 @@ class SearchService:
                 metrics.steps_ms[name] = elapsed_ms(step_started)
 
         def embed_cached(text: str) -> list[float]:
-            if text in embedding_cache:
+            cached = self._get_cached_embedding(text)
+            if cached is not None:
                 metrics.embedding_cache_hits += 1
-                return embedding_cache[text]
+                return cached
+            persistent_cached = self.search_cache.get_embedding(text, embedding_model_name())
+            if persistent_cached is not None:
+                metrics.embedding_cache_hits += 1
+                self._set_cached_embedding(text, persistent_cached)
+                return persistent_cached
             metrics.embedding_calls += 1
             metrics.embedding_texts += 1
             vector = run_sync(self.embed_fn(text))
-            embedding_cache[text] = vector
+            self._set_cached_embedding(text, vector)
+            self.search_cache.set_embedding(text, embedding_model_name(), vector)
             return vector
 
         def embed_many_cached(texts: list[str]) -> None:
             missing = []
             seen = set()
             for text in texts:
-                if text in embedding_cache:
+                if self._get_cached_embedding(text) is not None:
                     metrics.embedding_cache_hits += 1
                     continue
                 if text in seen:
@@ -107,6 +125,18 @@ class SearchService:
                     continue
                 seen.add(text)
                 missing.append(text)
+            if missing:
+                persistent_hits = self.search_cache.get_embeddings(missing, embedding_model_name())
+                if persistent_hits:
+                    still_missing = []
+                    for text in missing:
+                        vector = persistent_hits.get(text)
+                        if vector is None:
+                            still_missing.append(text)
+                            continue
+                        metrics.embedding_cache_hits += 1
+                        self._set_cached_embedding(text, vector)
+                    missing = still_missing
             if not missing:
                 return
             metrics.embedding_calls += 1
@@ -115,7 +145,28 @@ class SearchService:
             if len(vectors) != len(missing):
                 raise ValueError("embed_many() must return one embedding per input text.")
             for text, vector in zip(missing, vectors):
-                embedding_cache[text] = vector
+                self._set_cached_embedding(text, vector)
+            self.search_cache.set_embeddings(dict(zip(missing, vectors)), embedding_model_name())
+
+        def extract_query_attributes_cached() -> dict[str, Any]:
+            namespace = attribute_namespace(attribute_list.names)
+            cached = self.search_cache.get_query_parse(
+                request.query,
+                namespace,
+                query_model_name(),
+            )
+            if cached is not None:
+                return cached
+            parsed = parse_query_attribute_response(
+                run_sync(self.query_attribute_fn(request.query, attribute_list.names))
+            )
+            self.search_cache.set_query_parse(
+                request.query,
+                namespace,
+                query_model_name(),
+                parsed,
+            )
+            return parsed
 
         timed_step("validate_top_k", lambda: validate_top_k(request.top_k))
         attribute_list = timed_step(
@@ -128,21 +179,20 @@ class SearchService:
                 "embed_query",
                 lambda: embed_cached(request.query),
             )
-            documents_future = executor.submit(
-                timed_step,
-                "load_documents",
-                lambda: self.store.indexed_documents(request.collection_id),
-            )
             extracted_future = executor.submit(
                 timed_step,
                 "extract_query_attributes",
-                lambda: parse_query_attribute_response(
-                    run_sync(self.query_attribute_fn(request.query, attribute_list.names))
-                ),
+                extract_query_attributes_cached,
             )
             query_vector = query_vector_future.result()
-            all_documents = documents_future.result()
+            retrieval_limit = request.top_k * RETRIEVAL_MULTIPLIER
+            documents_future = executor.submit(
+                timed_step,
+                "vector_retrieve_documents",
+                lambda: self._retrieve_vector_candidates(request.collection_id, query_vector, retrieval_limit),
+            )
             extracted = extracted_future.result()
+            all_documents = documents_future.result()
         metrics.document_count = len(all_documents)
         weights = timed_step(
             "merge_weights",
@@ -158,23 +208,12 @@ class SearchService:
         )
         metrics.filtered_count = len(candidates)
 
-        def sort_candidates() -> None:
-            candidates.sort(
-                key=lambda document: normalize_cosine(cosine_similarity(query_vector, document.get("embedding", []))),
-                reverse=True,
-            )
-
-        timed_step("vector_candidate_sort", sort_candidates)
-        candidate_limit = min(len(candidates), request.top_k * RETRIEVAL_MULTIPLIER)
-        top_candidates = candidates[:candidate_limit]
+        top_candidates = candidates
         metrics.candidate_count = len(top_candidates)
         timed_step(
-            "embed_rerank_attributes",
+            "embed_query_rerank_attributes",
             lambda: embed_many_cached(
-                rerank_embedding_texts(
-                    extracted_attributes=extracted["attributes"],
-                    documents=top_candidates,
-                )
+                query_attribute_embedding_texts(extracted["attributes"])
             ),
         )
 
@@ -198,6 +237,35 @@ class SearchService:
         metrics.total_ms = elapsed_ms(started_at)
         self.last_metrics = metrics
         return results, metrics
+
+    def _retrieve_vector_candidates(
+        self,
+        collection_id: str,
+        query_vector: list[float],
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        vector_search = getattr(self.store, "vector_search_documents", None)
+        if vector_search:
+            return vector_search(collection_id, query_vector, limit)
+        documents = self.store.indexed_documents(collection_id)
+        documents.sort(
+            key=lambda document: normalize_cosine(cosine_similarity(query_vector, document.get("embedding", []))),
+            reverse=True,
+        )
+        return documents[:limit]
+
+    def _get_cached_embedding(self, text: str) -> list[float] | None:
+        vector = self.embedding_cache.get(text)
+        if vector is None:
+            return None
+        self.embedding_cache.move_to_end(text)
+        return vector
+
+    def _set_cached_embedding(self, text: str, vector: list[float]) -> None:
+        self.embedding_cache[text] = vector
+        self.embedding_cache.move_to_end(text)
+        while len(self.embedding_cache) > EMBEDDING_CACHE_MAX_ITEMS:
+            self.embedding_cache.popitem(last=False)
 
     def search_sync(self, request: SearchRequest) -> list[SearchResult]:
         return self.search(request)
@@ -288,12 +356,21 @@ def compute_feature_scores(
         "_weight_total": 0.0,
     }
     document_attrs = document.get("attrs", {})
+    document_attribute_embeddings = document.get("attribute_embeddings", {})
     for attribute, query_value in extracted_attributes.items():
         document_value = document_attrs.get(attribute)
         if query_value is None or document_value is None:
             continue
-        query_attr_vector = run_sync(embed_fn(f"{attribute}: {query_value}"))
-        document_attr_vector = run_sync(embed_fn(f"{attribute}: {document_value}"))
+        query_text = attribute_embedding_text(attribute, query_value)
+        if query_text is None:
+            continue
+        query_attr_vector = run_sync(embed_fn(query_text))
+        document_attr_vector = document_attribute_embeddings.get(attribute)
+        if not document_attr_vector:
+            document_text = attribute_embedding_text(attribute, document_value)
+            if document_text is None:
+                continue
+            document_attr_vector = run_sync(embed_fn(document_text))
         similarity = normalize_cosine(cosine_similarity(query_attr_vector, document_attr_vector))
         weight = weights.get(attribute, 1.0)
         positive_weight = max(weight, 0.0)
@@ -304,19 +381,12 @@ def compute_feature_scores(
     return scores
 
 
-def rerank_embedding_texts(
-    extracted_attributes: dict[str, Any],
-    documents: list[dict[str, Any]],
-) -> list[str]:
+def query_attribute_embedding_texts(extracted_attributes: dict[str, Any]) -> list[str]:
     texts: list[str] = []
     for attribute, query_value in extracted_attributes.items():
-        if query_value is None:
-            continue
-        texts.append(f"{attribute}: {query_value}")
-        for document in documents:
-            document_value = document.get("attrs", {}).get(attribute)
-            if document_value is not None:
-                texts.append(f"{attribute}: {document_value}")
+        text = attribute_embedding_text(attribute, query_value)
+        if text is not None:
+            texts.append(text)
     return texts
 
 
@@ -466,6 +536,18 @@ def sync_embed_many(texts: list[str]) -> list[list[float]]:
 
 def sync_extract_query_attributes(query: str, available_attributes: list[str]) -> str | dict[str, Any]:
     return run_sync(default_query_attribute_fn()(query, available_attributes))
+
+
+def embedding_model_name() -> str:
+    if os.getenv("LLM_PROVIDER", "fake").strip().lower() == "openai":
+        return os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
+    return "local-default-embedding"
+
+
+def query_model_name() -> str:
+    if os.getenv("LLM_PROVIDER", "fake").strip().lower() == "openai":
+        return os.getenv("OPENAI_QUERY_MODEL", "gpt-4.1-mini")
+    return "local-fake-query-parser"
 
 
 def run_sync(value):

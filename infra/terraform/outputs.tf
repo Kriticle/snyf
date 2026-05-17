@@ -26,6 +26,10 @@ output "usage_counters_table_name" {
   value = aws_dynamodb_table.usage_counters.name
 }
 
+output "search_cache_table_name" {
+  value = aws_dynamodb_table.search_cache.name
+}
+
 output "ingestion_jobs_table_name" {
   value = aws_dynamodb_table.ingestion_jobs.name
 }

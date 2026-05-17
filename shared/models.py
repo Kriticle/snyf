@@ -53,6 +53,7 @@ class ProductRecord:
     enriched_attrs: dict[str, Any] = field(default_factory=dict)
     enriched_text: str = ""
     embedding: list[float] = field(default_factory=list)
+    attribute_embeddings: dict[str, list[float]] = field(default_factory=dict)
     category: str | None = None
     price: float | None = None
     currency: str | None = None

@@ -141,6 +141,32 @@ class AwsStore:
             documents.append(self._record_to_document(record))
         return documents
 
+    def vector_search_documents(self, collection_id: str, query_vector: list[float], limit: int) -> list[dict[str, Any]]:
+        if not self.search or not self.search_index:
+            documents = self.indexed_documents(collection_id)
+            documents.sort(key=lambda document: dot_product(query_vector, document.get("embedding", [])), reverse=True)
+            return documents[:limit]
+        response = self.search.search(
+            index=self.search_index,
+            body={
+                "size": limit,
+                "query": {
+                    "knn": {
+                        "embedding": {
+                            "vector": query_vector,
+                            "k": limit,
+                            "filter": {
+                                "term": {
+                                    "collection_id": collection_id,
+                                }
+                            },
+                        }
+                    }
+                },
+            },
+        )
+        return [hit["_source"] for hit in response.get("hits", {}).get("hits", [])]
+
     def upsert_collection_config(self, config: CollectionConfig) -> None:
         self.collections.put_item(Item=to_dynamo_item(asdict(config)))
 
@@ -226,6 +252,7 @@ class AwsStore:
             "product_id": record.product_id,
             "enriched_text": record.enriched_text,
             "embedding": record.embedding,
+            "attribute_embeddings": record.attribute_embeddings,
             "attrs": record.enriched_attrs,
             "image_urls": record.image_urls,
             "category": record.category,
@@ -295,6 +322,11 @@ def ensure_index(client, index_name: str) -> None:
     client.indices.create(
         index=index_name,
         body={
+            "settings": {
+                "index": {
+                    "knn": True,
+                }
+            },
             "mappings": {
                 "properties": {
                     "collection_id": {"type": "keyword"},
@@ -306,9 +338,26 @@ def ensure_index(client, index_name: str) -> None:
                     "price": {"type": "float"},
                     "name": {"type": "text"},
                     "enriched_text": {"type": "text"},
-                    "embedding": {"type": "float"},
+                    "embedding": {
+                        "type": "knn_vector",
+                        "dimension": int(os.getenv("VECTOR_DIMENSION", "1536")),
+                        "method": {
+                            "name": "hnsw",
+                            "space_type": "innerproduct",
+                            "engine": "faiss",
+                            "parameters": {
+                                "ef_construction": 128,
+                                "m": 16,
+                            },
+                        },
+                    },
+                    "attribute_embeddings": {"type": "object", "enabled": True},
                     "attrs": {"type": "object", "enabled": True},
                 }
             }
         },
     )
+
+
+def dot_product(left: list[float], right: list[float]) -> float:
+    return sum(a * b for a, b in zip(left, right))

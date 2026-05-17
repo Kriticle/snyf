@@ -9,14 +9,17 @@ from typing import Awaitable, Callable, Any
 
 from functions.defaults import enriched_text
 from functions.providers import embed_fn as default_embed_fn
+from functions.providers import embed_many_fn as default_embed_many_fn
 from functions.providers import enrich_fn as default_enrich_fn
 from functions.providers import provider_name
+from shared.attribute_embeddings import build_attribute_embedding_inputs
 from shared.models import IngestionMessage, Operation, ProductRecord, ProductStatus, utc_now
 from shared.storage import JsonStore
 from shared.store_factory import create_store
 
 EnrichFn = Callable[[str, dict[str, Any], list[bytes], list[str]], Awaitable[str | dict[str, Any]] | str | dict[str, Any]]
 EmbedFn = Callable[[str], Awaitable[list[float]] | list[float]]
+EmbedManyFn = Callable[[list[str]], Awaitable[list[list[float]]] | list[list[float]]]
 logger = logging.getLogger(__name__)
 
 
@@ -26,10 +29,17 @@ class EnrichmentWorker:
         store: JsonStore,
         enrich_fn: EnrichFn | None = None,
         embed_fn: EmbedFn | None = None,
+        embed_many_fn: EmbedManyFn | None = None,
     ) -> None:
         self.store = store
         self.enrich_fn = enrich_fn or default_enrich_fn()
         self.embed_fn = embed_fn or default_embed_fn()
+        if embed_many_fn:
+            self.embed_many_fn = embed_many_fn
+        elif embed_fn:
+            self.embed_many_fn = lambda texts: [self.embed_fn(text) for text in texts]
+        else:
+            self.embed_many_fn = default_embed_many_fn()
 
     async def process_message(self, message: IngestionMessage) -> ProductRecord | None:
         if message.operation == Operation.DELETE:
@@ -71,9 +81,11 @@ class EnrichmentWorker:
             text = enriched_text(message.metadata, attrs)
             embedding = await maybe_await(self.embed_fn(text))
             validate_embedding(embedding)
+            attribute_embeddings = await self._embed_attributes(attrs)
             record.enriched_attrs = attrs
             record.enriched_text = text
             record.embedding = embedding
+            record.attribute_embeddings = attribute_embeddings
             record.status = ProductStatus.ENRICHED
             record.updated_at = utc_now()
             self.store.upsert_record(record)
@@ -111,6 +123,19 @@ class EnrichmentWorker:
         if provider_name() != "openai":
             return [url.encode("utf-8") for url in image_urls]
         return [await asyncio.to_thread(download_image, url) for url in image_urls]
+
+    async def _embed_attributes(self, attrs: dict[str, Any]) -> dict[str, list[float]]:
+        attributes, texts = build_attribute_embedding_inputs(attrs)
+        if not texts:
+            return {}
+        vectors = await maybe_await(self.embed_many_fn(texts))
+        if len(vectors) != len(texts):
+            raise ValueError("embed_many() must return one embedding per attribute value.")
+        attribute_embeddings: dict[str, list[float]] = {}
+        for attribute, vector in zip(attributes, vectors):
+            validate_embedding(vector)
+            attribute_embeddings[attribute] = vector
+        return attribute_embeddings
 
 
 def download_image(url: str, timeout_seconds: int = 10, max_bytes: int = 10_000_000) -> bytes:
