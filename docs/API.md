@@ -25,7 +25,7 @@ Send a customer API key in every protected ingestion/search request:
 x-api-key: fep_...
 ```
 
-Login sessions are separate from catalog API authorization. `POST /auth/signup` and `POST /auth/login` return session objects for product UI flows. UI-only API-key management endpoints use the `refresh_token` as a bearer token.
+Login sessions are separate from catalog API authorization. `POST /auth/signup` starts email verification, `POST /auth/verify-email` activates the customer and returns the initial session/API key, and `POST /auth/login` returns session objects for product UI flows. UI-only API-key management endpoints use the `refresh_token` as a bearer token.
 
 ## Errors
 
@@ -42,7 +42,7 @@ Common statuses:
 | Status | Meaning |
 | --- | --- |
 | `200` | Request succeeded |
-| `400` | Bad signup input or duplicate email |
+| `400` | Bad signup/verification input or duplicate email |
 | `401` | Missing/invalid API key or login failure |
 | `402` | Plan limit exceeded |
 | `404` | Collection not found or not owned by customer |
@@ -50,7 +50,7 @@ Common statuses:
 
 ## Signup
 
-Creates a customer, login session, and initial API key.
+Creates a pending customer and emails a verification code. No session or API key is issued until email verification succeeds.
 
 ```http
 POST /auth/signup
@@ -73,21 +73,13 @@ Response:
   "customer": {
     "customer_id": "cust_...",
     "email": "buyer@example.com",
-    "status": "ACTIVE",
+    "status": "PENDING_EMAIL_VERIFICATION",
     "plan": "FREE",
     "created_at": "2026-05-03T07:58:06.157348+00:00",
     "updated_at": "2026-05-03T07:58:06.157369+00:00"
   },
-  "session": {
-    "session_id": "sess_...",
-    "customer_id": "cust_...",
-    "status": "ACTIVE",
-    "expires_at": 1780387086,
-    "created_at": "2026-05-03T07:58:06.178210+00:00"
-  },
-  "refresh_token": "...",
-  "api_key": "fep_...",
-  "api_key_id": "key_..."
+  "verification_required": true,
+  "verification_expires_at": 1780387086
 }
 ```
 
@@ -97,6 +89,48 @@ Example:
 curl -sS -X POST "$API_URL/auth/signup" \
   -H "content-type: application/json" \
   -d '{"email":"buyer@example.com","password":"password123"}'
+```
+
+## Verify Email
+
+Activates the customer and returns the initial login session and API key.
+
+```http
+POST /auth/verify-email
+content-type: application/json
+```
+
+Request:
+
+```json
+{
+  "email": "buyer@example.com",
+  "code": "123456"
+}
+```
+
+Link-based verification can send `token` instead of `code`.
+
+Response:
+
+```json
+{
+  "customer": {
+    "customer_id": "cust_...",
+    "email": "buyer@example.com",
+    "status": "ACTIVE",
+    "plan": "FREE"
+  },
+  "session": {
+    "session_id": "sess_...",
+    "customer_id": "cust_...",
+    "status": "ACTIVE",
+    "expires_at": 1780387086
+  },
+  "refresh_token": "...",
+  "api_key": "fep_...",
+  "api_key_id": "key_..."
+}
 ```
 
 ## Login

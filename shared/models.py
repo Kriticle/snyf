@@ -83,6 +83,10 @@ class Customer:
     password_hash: str
     status: str
     plan: str = "FREE"
+    email_verified_at: str | None = None
+    email_verification_code_hash: str | None = None
+    email_verification_token_hash: str | None = None
+    email_verification_expires_at: int | None = None
     created_at: str = field(default_factory=lambda: utc_now())
     updated_at: str = field(default_factory=lambda: utc_now())
 

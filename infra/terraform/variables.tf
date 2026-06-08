@@ -78,6 +78,18 @@ variable "api_cors_allowed_origins" {
   default     = ["*"]
 }
 
+variable "email_from_address" {
+  description = "Verified SES sender address for signup verification emails. Leave empty to log verification emails only."
+  type        = string
+  default     = ""
+}
+
+variable "email_verification_url_base" {
+  description = "Frontend URL that handles email verification links, for example https://example.com/signup.html. Leave empty to send code-only emails."
+  type        = string
+  default     = ""
+}
+
 variable "api_default_throttle_burst_limit" {
   description = "Default API Gateway burst throttle. Per-plan limits are enforced by the app using ApiKeys and UsageCounters."
   type        = number

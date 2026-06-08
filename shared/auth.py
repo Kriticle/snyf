@@ -6,7 +6,9 @@ import hmac
 import secrets
 import time
 from dataclasses import asdict
+from urllib.parse import urlencode
 
+from shared.email import EmailSender, VerificationEmail
 from shared.models import ApiKey, Customer, Session, utc_now
 from shared.plans import plan_limits
 from shared.storage import JsonStore
@@ -17,24 +19,92 @@ class AuthError(ValueError):
 
 
 class AuthService:
-    def __init__(self, store: JsonStore, session_ttl_seconds: int = 60 * 60 * 24 * 30) -> None:
+    def __init__(
+        self,
+        store: JsonStore,
+        session_ttl_seconds: int = 60 * 60 * 24 * 30,
+        email_sender: EmailSender | None = None,
+        verification_ttl_seconds: int = 60 * 15,
+        verification_url_base: str | None = None,
+        expose_verification_code: bool = False,
+    ) -> None:
         self.store = store
         self.session_ttl_seconds = session_ttl_seconds
+        self.email_sender = email_sender
+        self.verification_ttl_seconds = verification_ttl_seconds
+        self.verification_url_base = verification_url_base
+        self.expose_verification_code = expose_verification_code
 
     def signup(self, email: str, password: str) -> dict:
         normalized = normalize_email(email)
         validate_password(password)
-        if self.store.get_customer_by_email(normalized):
+        existing = self.store.get_customer_by_email(normalized)
+        if existing and existing.status == "ACTIVE":
             raise AuthError("Email already exists.")
 
-        customer = Customer(
+        code = f"{secrets.randbelow(1_000_000):06d}"
+        token = secrets.token_urlsafe(32)
+        expires_at = int(time.time()) + self.verification_ttl_seconds
+        customer = existing or Customer(
             customer_id=f"cust_{secrets.token_urlsafe(12)}",
             email=normalized,
-            password_hash=hash_password(password),
-            status="ACTIVE",
+            password_hash="",
+            status="PENDING_EMAIL_VERIFICATION",
             plan="FREE",
         )
+        customer.password_hash = hash_password(password)
+        customer.status = "PENDING_EMAIL_VERIFICATION"
+        customer.email_verification_code_hash = sha256(code)
+        customer.email_verification_token_hash = sha256(token)
+        customer.email_verification_expires_at = expires_at
+        customer.updated_at = utc_now()
         self.store.upsert_customer(customer)
+
+        verification_url = self._verification_url(normalized, token)
+        if self.email_sender:
+            self.email_sender.send_verification_email(
+                VerificationEmail(
+                    to_email=normalized,
+                    code=code,
+                    expires_minutes=max(1, self.verification_ttl_seconds // 60),
+                    verification_url=verification_url,
+                )
+            )
+
+        response = {
+            "customer": public_customer(customer),
+            "verification_required": True,
+            "verification_expires_at": expires_at,
+        }
+        if self.expose_verification_code:
+            response["verification_code"] = code
+            response["verification_token"] = token
+        return response
+
+    def verify_email(self, email: str, code: str | None = None, token: str | None = None) -> dict:
+        customer = self.store.get_customer_by_email(normalize_email(email))
+        if customer is None:
+            raise AuthError("Invalid verification request.")
+        if customer.status == "ACTIVE" and customer.email_verified_at:
+            raise AuthError("Email is already verified.")
+        if customer.status != "PENDING_EMAIL_VERIFICATION":
+            raise AuthError("Invalid verification request.")
+        if not customer.email_verification_expires_at or customer.email_verification_expires_at < int(time.time()):
+            raise AuthError("Verification code has expired.")
+
+        code_ok = bool(code and customer.email_verification_code_hash == sha256(code.strip()))
+        token_ok = bool(token and customer.email_verification_token_hash == sha256(token.strip()))
+        if not code_ok and not token_ok:
+            raise AuthError("Invalid verification code.")
+
+        customer.status = "ACTIVE"
+        customer.email_verified_at = utc_now()
+        customer.email_verification_code_hash = None
+        customer.email_verification_token_hash = None
+        customer.email_verification_expires_at = None
+        customer.updated_at = utc_now()
+        self.store.upsert_customer(customer)
+
         session, refresh_token = self._create_session(customer.customer_id)
         api_key, raw_api_key = self.create_api_key(customer.customer_id)
         return {
@@ -49,6 +119,8 @@ class AuthService:
         customer = self.store.get_customer_by_email(normalize_email(email))
         if customer is None or not verify_password(password, customer.password_hash):
             raise AuthError("Invalid email or password.")
+        if customer.status == "PENDING_EMAIL_VERIFICATION":
+            raise AuthError("Email verification required.")
         if customer.status != "ACTIVE":
             raise AuthError("Customer is not active.")
         session, refresh_token = self._create_session(customer.customer_id)
@@ -137,6 +209,12 @@ class AuthService:
         self.store.upsert_session(session)
         return session, refresh_token
 
+    def _verification_url(self, email: str, token: str) -> str | None:
+        if not self.verification_url_base:
+            return None
+        separator = "&" if "?" in self.verification_url_base else "?"
+        return f"{self.verification_url_base}{separator}{urlencode({'email': email, 'verification_token': token})}"
+
 
 def normalize_email(email: str) -> str:
     normalized = email.strip().lower()
@@ -171,6 +249,9 @@ def sha256(value: str) -> str:
 def public_customer(customer: Customer) -> dict:
     data = asdict(customer)
     data.pop("password_hash", None)
+    data.pop("email_verification_code_hash", None)
+    data.pop("email_verification_token_hash", None)
+    data.pop("email_verification_expires_at", None)
     return data
 
 

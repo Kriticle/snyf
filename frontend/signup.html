@@ -52,9 +52,23 @@
             </div>
             
             <p id="signup-error-msg" class="text-red-500 text-sm -mt-2 -mb-2 hidden"></p>
+            <p id="signup-status-msg" class="text-green-400 text-sm -mt-2 -mb-2 hidden"></p>
 
             <button type="submit" id="signup-submit-btn" class="w-full bg-primary text-white font-semibold py-3 px-6 rounded-lg hover:bg-primary/90 transition">
                 <span>Sign Up</span>
+            </button>
+        </form>
+
+        <form id="verification-form" class="space-y-4 hidden">
+            <div>
+                <label for="verification-code" class="block text-sm font-medium text-gray-400">Verification Code</label>
+                <input type="text" id="verification-code" name="verification-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" class="w-full px-4 py-3 rounded-lg bg-gray-900 border border-gray-700 text-white focus:ring-primary focus:border-primary placeholder-gray-500 focus:outline-none transition-colors">
+            </div>
+
+            <p id="verification-error-msg" class="text-red-500 text-sm -mt-2 -mb-2 hidden"></p>
+
+            <button type="submit" id="verification-submit-btn" class="w-full bg-primary text-white font-semibold py-3 px-6 rounded-lg hover:bg-primary/90 transition">
+                <span>Verify Email</span>
             </button>
         </form>
 
@@ -66,13 +80,37 @@
             const SNYF_API_URL = 'https://xydj4rm9eg.execute-api.us-east-1.amazonaws.com';
             
             const signupForm = document.getElementById('signup-form');
+            const verificationForm = document.getElementById('verification-form');
             const submitBtn = document.getElementById('signup-submit-btn');
+            const verificationSubmitBtn = document.getElementById('verification-submit-btn');
             const errorMsg = document.getElementById('signup-error-msg');
-            
+            const statusMsg = document.getElementById('signup-status-msg');
+            const verificationErrorMsg = document.getElementById('verification-error-msg');
+
             // Input references
             const companyInput = document.getElementById('company_id_raw');
             const emailInput = document.getElementById('email');
             const passwordInput = document.getElementById('password');
+            const verificationCodeInput = document.getElementById('verification-code');
+            let pendingEmail = '';
+            let pendingToken = '';
+
+            function storeAuth(data) {
+                localStorage.setItem('snyfCustomer', JSON.stringify(data.customer));
+                localStorage.setItem('snyfSession', JSON.stringify(data.session));
+                localStorage.setItem('snyfRefreshToken', data.refresh_token);
+                localStorage.setItem('snyfApiKey', data.api_key);
+                localStorage.setItem('snyfCompanyName', companyInput.value.trim() || localStorage.getItem('snyfCompanyName') || '');
+            }
+
+            function showVerification(email, message) {
+                pendingEmail = email;
+                signupForm.classList.add('hidden');
+                verificationForm.classList.remove('hidden');
+                statusMsg.textContent = message;
+                statusMsg.classList.remove('hidden');
+                verificationCodeInput.focus();
+            }
 
             // --- 1. ENTER KEY LOGIC ---
             // Helper function to handle enter key navigation
@@ -100,6 +138,7 @@
                 
                 const btnSpan = submitBtn.querySelector('span') || submitBtn;
                 errorMsg.classList.add('hidden'); // Clear previous errors
+                statusMsg.classList.add('hidden');
 
                 // Get values
                 const company_id_raw = companyInput.value.trim();
@@ -142,13 +181,13 @@
                         throw new Error(data.detail || data.message || data.errorMessage || 'Signup failed');
                     }
 
-                    localStorage.setItem('snyfCustomer', JSON.stringify(data.customer));
-                    localStorage.setItem('snyfSession', JSON.stringify(data.session));
-                    localStorage.setItem('snyfRefreshToken', data.refresh_token);
-                    localStorage.setItem('snyfApiKey', data.api_key);
-                    localStorage.setItem('snyfCompanyName', company_id_raw);
-
-                    window.location.href = 'dashboard.html'; 
+                    if (data.verification_required) {
+                        localStorage.setItem('snyfCompanyName', company_id_raw);
+                        showVerification(email, 'Check your email for the verification code.');
+                    } else {
+                        storeAuth(data);
+                        window.location.href = 'dashboard.html';
+                    }
 
                 } catch (error) {
                     errorMsg.textContent = error.message;
@@ -158,6 +197,49 @@
                     submitBtn.disabled = false;
                 }
             });
+
+            verificationForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+
+                const btnSpan = verificationSubmitBtn.querySelector('span') || verificationSubmitBtn;
+                verificationErrorMsg.classList.add('hidden');
+                btnSpan.textContent = 'Verifying...';
+                verificationSubmitBtn.disabled = true;
+
+                try {
+                    const body = pendingToken
+                        ? { email: pendingEmail, token: pendingToken }
+                        : { email: pendingEmail, code: verificationCodeInput.value.trim() };
+                    const response = await fetch(`${SNYF_API_URL}/auth/verify-email`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(body)
+                    });
+
+                    const data = await response.json();
+
+                    if (!response.ok) {
+                        throw new Error(data.detail || data.message || data.errorMessage || 'Verification failed');
+                    }
+
+                    storeAuth(data);
+                    window.location.href = 'dashboard.html';
+                } catch (error) {
+                    verificationErrorMsg.textContent = error.message;
+                    verificationErrorMsg.classList.remove('hidden');
+                    btnSpan.textContent = 'Verify Email';
+                    verificationSubmitBtn.disabled = false;
+                }
+            });
+
+            const params = new URLSearchParams(window.location.search);
+            pendingEmail = params.get('email') || '';
+            pendingToken = params.get('verification_token') || '';
+            if (pendingEmail && pendingToken) {
+                emailInput.value = pendingEmail;
+                showVerification(pendingEmail, 'Verifying your email...');
+                verificationForm.requestSubmit();
+            }
         });
     </script>
 </body>

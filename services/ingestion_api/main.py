@@ -14,6 +14,7 @@ from services.enrichment_worker.worker import EnrichmentWorker
 from shared.attribute_loader import load_attribute_list
 from shared.auth import AuthError, AuthService
 from shared.csv_ingestion import CsvIngestionService
+from shared.email import create_email_sender
 from shared.models import ProductRecord, ProductStatus
 from shared.plans import PlanLimitError, UsageService
 from shared.store_factory import create_store
@@ -32,14 +33,24 @@ if FastAPI is not None:
         email: str
         password: str
 
+    class VerifyEmailPayload(BaseModel):
+        email: str
+        code: str | None = None
+        token: str | None = None
 
-def create_app(data_dir: str = "data"):
+
+def create_app(data_dir: str = "data", expose_verification_code: bool = False):
     if FastAPI is None:
         raise RuntimeError("FastAPI is not installed. Use the CLI mode or install requirements.txt.")
 
     app = FastAPI(title="Fashion Attribute Enrichment - Ingestion API")
     store = create_store(data_dir)
-    auth_service = AuthService(store)
+    auth_service = AuthService(
+        store,
+        email_sender=create_email_sender(),
+        verification_url_base=os.getenv("SNYF_VERIFICATION_URL_BASE"),
+        expose_verification_code=expose_verification_code,
+    )
     usage_service = UsageService(store)
 
     @app.get("/health")
@@ -50,6 +61,20 @@ def create_app(data_dir: str = "data"):
     def signup(payload: AuthPayload):
         try:
             return auth_service.signup(payload.email, payload.password)
+        except AuthError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/auth/verify-email")
+    def verify_email(payload: VerifyEmailPayload):
+        try:
+            return auth_service.verify_email(payload.email, code=payload.code, token=payload.token)
+        except AuthError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/auth/verify-email")
+    def verify_email_link(email: str, token: str | None = None, verification_token: str | None = None):
+        try:
+            return auth_service.verify_email(email, token=token or verification_token)
         except AuthError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -153,7 +178,6 @@ def create_app(data_dir: str = "data"):
         return serialize(result)
 
     return app
-
 
 app = create_app() if FastAPI is not None else None
 

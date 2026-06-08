@@ -32,6 +32,28 @@ class PlatformFlowTests(unittest.TestCase):
         )
         return str(attr_file)
 
+    def auth_service(self, store: JsonStore) -> AuthService:
+        return AuthService(store, expose_verification_code=True)
+
+    def verified_signup(self, auth: AuthService, email: str, password: str = "password123") -> dict:
+        signup = auth.signup(email, password)
+        return auth.verify_email(email, code=signup["verification_code"])
+
+    def app_client(self, data_dir: str) -> TestClient:
+        return TestClient(create_app(data_dir, expose_verification_code=True))
+
+    def verified_client_signup(self, client: TestClient, email: str, password: str = "password123") -> dict:
+        signup = client.post(
+            "/auth/signup",
+            json={"email": email, "password": password},
+        )
+        payload = signup.json()
+        verified = client.post(
+            "/auth/verify-email",
+            json={"email": email, "code": payload["verification_code"]},
+        )
+        return verified.json()
+
     def test_csv_ingestion_processes_valid_rows_and_keeps_row_errors_local(self) -> None:
         csv_text = """product_id,collection_id,name,category,image_urls,attributes,description,price
 prod_001,coll_a,Linen Trouser,bottoms,https://cdn.example.com/p1.jpg,"[""occasion"",""silhouette"",""fabric_feel"",""color""]","Cream linen wide leg holiday trouser",89
@@ -53,23 +75,56 @@ prod_003,coll_a,Non HTTPS,dresses,http://cdn.example.com/p3.jpg,"[""occasion""]"
 
     def test_signup_rejects_duplicate_email_and_login_creates_session(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            auth = AuthService(JsonStore(tmp))
+            auth = self.auth_service(JsonStore(tmp))
             signup = auth.signup("Buyer@Brand.com", "password123")
             self.assertEqual(signup["customer"]["email"], "buyer@brand.com")
-            self.assertIn("refresh_token", signup)
+            self.assertEqual(signup["customer"]["status"], "PENDING_EMAIL_VERIFICATION")
+            self.assertIn("verification_code", signup)
+
+            with self.assertRaises(AuthError):
+                auth.login("buyer@brand.com", "password123")
+
+            verified = auth.verify_email("buyer@brand.com", code=signup["verification_code"])
+            self.assertIn("refresh_token", verified)
 
             with self.assertRaises(AuthError):
                 auth.signup("buyer@brand.com", "password123")
 
             login = auth.login("buyer@brand.com", "password123")
-            self.assertEqual(login["customer"]["customer_id"], signup["customer"]["customer_id"])
+            self.assertEqual(login["customer"]["customer_id"], verified["customer"]["customer_id"])
             self.assertIn("session_id", login["session"])
+
+    def test_signup_api_requires_email_verification_before_issuing_tokens(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            client = self.app_client(tmp)
+            signup = client.post(
+                "/auth/signup",
+                json={"email": "verify@example.com", "password": "password123"},
+            )
+            signup_payload = signup.json()
+
+            blocked_login = client.post(
+                "/auth/login",
+                json={"email": "verify@example.com", "password": "password123"},
+            )
+            verified = client.post(
+                "/auth/verify-email",
+                json={"email": "verify@example.com", "code": signup_payload["verification_code"]},
+            )
+
+            self.assertEqual(signup.status_code, 200)
+            self.assertTrue(signup_payload["verification_required"])
+            self.assertNotIn("api_key", signup_payload)
+            self.assertEqual(blocked_login.status_code, 401)
+            self.assertEqual(verified.status_code, 200)
+            self.assertIn("api_key", verified.json())
+            self.assertIn("refresh_token", verified.json())
 
     def test_api_key_authenticates_customer(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = JsonStore(tmp)
-            auth = AuthService(store)
-            signup = auth.signup("buyer@brand.com", "password123")
+            auth = self.auth_service(store)
+            signup = self.verified_signup(auth, "buyer@brand.com")
 
             customer = auth.authenticate_api_key(signup["api_key"])
 
@@ -78,8 +133,8 @@ prod_003,coll_a,Non HTTPS,dresses,http://cdn.example.com/p3.jpg,"[""occasion""]"
     def test_customer_can_view_and_create_visible_api_keys_after_login(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = JsonStore(tmp)
-            auth = AuthService(store)
-            signup = auth.signup("buyer@brand.com", "password123")
+            auth = self.auth_service(store)
+            signup = self.verified_signup(auth, "buyer@brand.com")
             login = auth.login("buyer@brand.com", "password123")
 
             api_keys = auth.list_api_keys(login["refresh_token"])
@@ -110,8 +165,8 @@ prod_003,coll_a,Non HTTPS,dresses,http://cdn.example.com/p3.jpg,"[""occasion""]"
     def test_plan_limits_fail_with_upgrade_message(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = JsonStore(tmp)
-            auth = AuthService(store)
-            signup = auth.signup("buyer@brand.com", "password123")
+            auth = self.auth_service(store)
+            signup = self.verified_signup(auth, "buyer@brand.com")
             customer = auth.authenticate_api_key(signup["api_key"])
             usage = UsageService(store)
 
@@ -302,16 +357,10 @@ prod_001,Linen Trouser,bottoms,https://cdn.example.com/p1.jpg,Cream linen wide l
 prod_001,Linen Trouser,bottoms,https://cdn.example.com/p1.jpg,Cream linen wide leg holiday trouser,89
 """
         with tempfile.TemporaryDirectory() as tmp:
-            client = TestClient(create_app(tmp))
+            client = self.app_client(tmp)
             attr_file = self.write_attribute_file(tmp)
-            owner = client.post(
-                "/auth/signup",
-                json={"email": "job-owner@example.com", "password": "password123"},
-            ).json()
-            other = client.post(
-                "/auth/signup",
-                json={"email": "job-other@example.com", "password": "password123"},
-            ).json()
+            owner = self.verified_client_signup(client, "job-owner@example.com")
+            other = self.verified_client_signup(client, "job-other@example.com")
 
             with patch.dict("os.environ", {"ATTRIBUTE_LIST_BASE_URI": str(Path(attr_file).parent)}):
                 upload = client.post(
@@ -357,21 +406,15 @@ prod_001,coll_a,Linen Trouser,bottoms,https://cdn.example.com/p1.jpg,"[""occasio
 
     def test_upload_rejects_collection_owned_by_another_customer(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            client = TestClient(create_app(tmp))
+            client = self.app_client(tmp)
             attr_file = self.write_attribute_file(tmp)
             csv_text = (
                 "product_id,collection_id,name,category,image_urls,description,price\n"
                 "prod_001,coll_a,Linen Trouser,bottoms,https://cdn.example.com/p1.jpg,Cream linen wide leg holiday trouser,89\n"
             )
 
-            owner = client.post(
-                "/auth/signup",
-                json={"email": "owner@example.com", "password": "password123"},
-            ).json()
-            other = client.post(
-                "/auth/signup",
-                json={"email": "other@example.com", "password": "password123"},
-            ).json()
+            owner = self.verified_client_signup(client, "owner@example.com")
+            other = self.verified_client_signup(client, "other@example.com")
             with patch.dict("os.environ", {"ATTRIBUTE_LIST_BASE_URI": str(Path(attr_file).parent)}):
                 owner_upload = client.post(
                     "/collections/coll_a/upload",
@@ -391,16 +434,13 @@ prod_001,coll_a,Linen Trouser,bottoms,https://cdn.example.com/p1.jpg,"[""occasio
 
     def test_upload_accepts_attribute_file_name_only(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            client = TestClient(create_app(tmp))
+            client = self.app_client(tmp)
             attr_file = self.write_attribute_file(tmp)
             csv_text = (
                 "product_id,collection_id,name,category,image_urls,description,price\n"
                 "prod_001,coll_a,Linen Trouser,bottoms,https://cdn.example.com/p1.jpg,Cream linen wide leg holiday trouser,89\n"
             )
-            signup = client.post(
-                "/auth/signup",
-                json={"email": "happy@example.com", "password": "password123"},
-            ).json()
+            signup = self.verified_client_signup(client, "happy@example.com")
 
             with patch.dict("os.environ", {"ATTRIBUTE_LIST_BASE_URI": str(Path(attr_file).parent)}):
                 response = client.post(
@@ -420,12 +460,9 @@ prod_001,coll_a,Linen Trouser,bottoms,https://cdn.example.com/p1.jpg,"[""occasio
 
     def test_collection_lookup_reports_existing_attribute_list_for_owner(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            client = TestClient(create_app(tmp))
+            client = self.app_client(tmp)
             attr_file = self.write_attribute_file(tmp)
-            signup = client.post(
-                "/auth/signup",
-                json={"email": "collection@example.com", "password": "password123"},
-            ).json()
+            signup = self.verified_client_signup(client, "collection@example.com")
             JsonStore(tmp).upsert_collection_config(
                 CollectionConfig(
                     collection_id="coll_a",
@@ -447,12 +484,9 @@ prod_001,coll_a,Linen Trouser,bottoms,https://cdn.example.com/p1.jpg,"[""occasio
 
     def test_existing_collection_attribute_list_cannot_be_changed_on_upload(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            client = TestClient(create_app(tmp))
+            client = self.app_client(tmp)
             attr_file = self.write_attribute_file(tmp)
-            signup = client.post(
-                "/auth/signup",
-                json={"email": "locked@example.com", "password": "password123"},
-            ).json()
+            signup = self.verified_client_signup(client, "locked@example.com")
             JsonStore(tmp).upsert_collection_config(
                 CollectionConfig(
                     collection_id="coll_a",
@@ -478,15 +512,12 @@ prod_001,coll_a,Linen Trouser,bottoms,https://cdn.example.com/p1.jpg,"[""occasio
 
     def test_upload_rejects_attribute_list_uri_as_file_name(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            client = TestClient(create_app(tmp))
+            client = self.app_client(tmp)
             csv_text = (
                 "product_id,collection_id,name,category,image_urls,description,price\n"
                 "prod_001,coll_a,Linen Trouser,bottoms,https://cdn.example.com/p1.jpg,Cream linen wide leg holiday trouser,89\n"
             )
-            signup = client.post(
-                "/auth/signup",
-                json={"email": "bad-attr@example.com", "password": "password123"},
-            ).json()
+            signup = self.verified_client_signup(client, "bad-attr@example.com")
 
             response = client.post(
                 "/collections/coll_a/upload",
@@ -1058,7 +1089,8 @@ prod_002,coll_a,Structured Blazer,outerwear,https://cdn.example.com/p2.jpg,"[""m
     def test_search_api_rejects_top_k_above_limit_as_client_error(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = JsonStore(tmp)
-            signup = AuthService(store).signup("search@example.com", "password123")
+            auth = self.auth_service(store)
+            signup = self.verified_signup(auth, "search@example.com")
             store.upsert_collection_config(
                 CollectionConfig(
                     collection_id="coll_a",
@@ -1092,7 +1124,8 @@ prod_002,coll_a,Structured Blazer,outerwear,https://cdn.example.com/p2.jpg,"[""m
 """
         with tempfile.TemporaryDirectory() as tmp:
             store = JsonStore(tmp)
-            signup = AuthService(store).signup("keyword@example.com", "password123")
+            auth = self.auth_service(store)
+            signup = self.verified_signup(auth, "keyword@example.com")
             CsvIngestionService(
                 store,
                 signup["customer"]["customer_id"],

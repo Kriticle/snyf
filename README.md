@@ -146,8 +146,16 @@ SIGNUP_RESPONSE=$(curl -sS -X POST "$API_URL/auth/signup" \
   -H "content-type: application/json" \
   -d '{"email":"readme-smoke-'"$(date +%s)"'@example.com","password":"password123"}')
 
-export API_KEY=$(printf '%s' "$SIGNUP_RESPONSE" | jq -r '.api_key')
-export REFRESH_TOKEN=$(printf '%s' "$SIGNUP_RESPONSE" | jq -r '.refresh_token')
+echo "$SIGNUP_RESPONSE" | jq
+echo "Enter the emailed verification code:"
+read -r VERIFICATION_CODE
+
+VERIFY_RESPONSE=$(curl -sS -X POST "$API_URL/auth/verify-email" \
+  -H "content-type: application/json" \
+  -d '{"email":"'"$(printf '%s' "$SIGNUP_RESPONSE" | jq -r '.customer.email')"'","code":"'"$VERIFICATION_CODE"'"}')
+
+export API_KEY=$(printf '%s' "$VERIFY_RESPONSE" | jq -r '.api_key')
+export REFRESH_TOKEN=$(printf '%s' "$VERIFY_RESPONSE" | jq -r '.refresh_token')
 
 curl -sS "$API_URL/auth/api-keys" \
   -H "authorization: Bearer $REFRESH_TOKEN" | jq
@@ -230,21 +238,21 @@ Example response:
   "customer": {
     "customer_id": "cust_...",
     "email": "buyer@example.com",
-    "status": "ACTIVE",
+    "status": "PENDING_EMAIL_VERIFICATION",
     "plan": "FREE"
   },
-  "session": {
-    "session_id": "sess_...",
-    "customer_id": "cust_...",
-    "status": "ACTIVE"
-  },
-  "refresh_token": "...",
-  "api_key": "fep_...",
-  "api_key_id": "key_..."
+  "verification_required": true,
+  "verification_expires_at": 1780387086
 }
 ```
 
-Save the API key:
+Verify the emailed code, then save the returned API key:
+
+```bash
+curl -s -X POST "$INGESTION_URL/auth/verify-email" \
+  -H "content-type: application/json" \
+  -d '{"email":"buyer@example.com","code":"123456"}'
+```
 
 ```bash
 export API_KEY=fep_...
@@ -595,6 +603,12 @@ It provisions:
 - OpenSearch domain
 - IAM roles and policies
 - CloudWatch log groups
+
+Signup verification email:
+
+- Set `email_from_address` to a verified SES sender address to send real verification emails.
+- Set `email_verification_url_base` to the frontend signup URL, such as `https://example.com/signup.html`, to include one-click verification links.
+- Leaving `email_from_address` empty logs verification codes from the ingestion API container for local or smoke-test deployments.
 
 DynamoDB safety:
 

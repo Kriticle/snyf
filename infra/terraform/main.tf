@@ -738,6 +738,14 @@ resource "aws_iam_role_policy" "app_access" {
         Effect   = "Allow"
         Action   = ["secretsmanager:GetSecretValue"]
         Resource = var.openai_api_key_secret_arn != "" ? var.openai_api_key_secret_arn : "arn:aws:secretsmanager:${var.aws_region}:*:secret:no-openai-secret-configured-*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ses:SendEmail",
+          "ses:SendRawEmail"
+        ]
+        Resource = "*"
       }
     ]
   })
@@ -843,6 +851,8 @@ locals {
     DEMO_RATE_LIMIT_PER_MINUTE = tostring(var.demo_search_rate_limit_per_minute)
     DEMO_TOP_K                 = tostring(var.demo_search_top_k)
     DEMO_COLLECTION_ID         = var.demo_collection_id
+    SNYF_EMAIL_FROM            = var.email_from_address
+    SNYF_VERIFICATION_URL_BASE = var.email_verification_url_base
   }
 
   service_secrets = var.openai_api_key_secret_arn == "" ? {} : {
@@ -910,6 +920,18 @@ resource "aws_apigatewayv2_route" "signup" {
 resource "aws_apigatewayv2_route" "login" {
   api_id    = aws_apigatewayv2_api.http.id
   route_key = "POST /auth/login"
+  target    = "integrations/${aws_apigatewayv2_integration.alb.id}"
+}
+
+resource "aws_apigatewayv2_route" "verify_email" {
+  api_id    = aws_apigatewayv2_api.http.id
+  route_key = "POST /auth/verify-email"
+  target    = "integrations/${aws_apigatewayv2_integration.alb.id}"
+}
+
+resource "aws_apigatewayv2_route" "verify_email_link" {
+  api_id    = aws_apigatewayv2_api.http.id
+  route_key = "GET /auth/verify-email"
   target    = "integrations/${aws_apigatewayv2_integration.alb.id}"
 }
 
