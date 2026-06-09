@@ -38,6 +38,8 @@ env:
   TF_VAR_assign_public_ip: ${{ vars.ASSIGN_PUBLIC_IP || 'false' }}
   TF_VAR_llm_provider: ${{ vars.LLM_PROVIDER || 'fake' }}
   TF_VAR_openai_api_key_secret_arn: ${{ secrets.OPENAI_API_KEY_SECRET_ARN || '' }}
+  TF_VAR_email_from_address: ${{ vars.EMAIL_FROM_ADDRESS || '' }}
+  TF_VAR_email_verification_url_base: ${{ vars.EMAIL_VERIFICATION_URL_BASE || '' }}
 
 jobs:
   plan:

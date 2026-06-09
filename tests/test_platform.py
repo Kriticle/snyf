@@ -152,6 +152,32 @@ prod_003,coll_a,Non HTTPS,dresses,http://cdn.example.com/p3.jpg,"[""occasion""]"
             self.assertIn("api_key", verified.json())
             self.assertIn("refresh_token", verified.json())
 
+    def test_signup_can_skip_email_verification_for_launch_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            auth = AuthService(JsonStore(tmp), require_email_verification=False)
+
+            signup = auth.signup("launch@example.com", "password123")
+            login = auth.login("launch@example.com", "password123")
+
+            self.assertFalse(signup["verification_required"])
+            self.assertEqual(signup["customer"]["status"], "ACTIVE")
+            self.assertIsNone(signup["customer"]["email_verified_at"])
+            self.assertIn("api_key", signup)
+            self.assertIn("refresh_token", login)
+
+    def test_launch_mode_can_activate_existing_pending_signup_without_replacing_password(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = JsonStore(tmp)
+            AuthService(store, expose_verification_code=True).signup("pending-launch@example.com", "original-password")
+            launch_auth = AuthService(store, require_email_verification=False)
+
+            with self.assertRaises(AuthError):
+                launch_auth.signup("pending-launch@example.com", "wrong-password")
+            signup = launch_auth.signup("pending-launch@example.com", "original-password")
+
+            self.assertFalse(signup["verification_required"])
+            self.assertEqual(signup["customer"]["status"], "ACTIVE")
+
     def test_verification_link_does_not_issue_credentials(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             client = self.app_client(tmp)

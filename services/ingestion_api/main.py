@@ -61,6 +61,7 @@ def create_app(data_dir: str = "data", expose_verification_code: bool = False):
         ),
         verification_url_base=os.getenv("SNYF_VERIFICATION_URL_BASE"),
         expose_verification_code=expose_verification_code,
+        require_email_verification=require_email_verification(),
     )
     usage_service = UsageService(store)
 
@@ -209,6 +210,13 @@ def allow_console_email_fallback() -> bool:
     if "dev" in resource_names:
         return True
     return not (os.getenv("AWS_EXECUTION_ENV") or os.getenv("ECS_CONTAINER_METADATA_URI_V4"))
+
+
+def require_email_verification() -> bool:
+    value = os.getenv("REQUIRE_EMAIL_VERIFICATION")
+    if value is None:
+        return True
+    return value.lower() not in {"0", "false", "no"}
 
 
 app = (

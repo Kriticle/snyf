@@ -29,6 +29,7 @@ class AuthService:
         expose_verification_code: bool = False,
         verification_max_attempts: int = 5,
         verification_lock_seconds: int = 60 * 15,
+        require_email_verification: bool = True,
     ) -> None:
         self.store = store
         self.session_ttl_seconds = session_ttl_seconds
@@ -38,6 +39,7 @@ class AuthService:
         self.expose_verification_code = expose_verification_code
         self.verification_max_attempts = verification_max_attempts
         self.verification_lock_seconds = verification_lock_seconds
+        self.require_email_verification = require_email_verification
 
     def signup(self, email: str, password: str) -> dict:
         normalized = normalize_email(email)
@@ -45,6 +47,22 @@ class AuthService:
         existing = self.store.get_customer_by_email(normalized)
         if existing and existing.status == "ACTIVE":
             raise AuthError("Email already exists.")
+        if not self.require_email_verification:
+            if existing:
+                if not verify_password(password, existing.password_hash):
+                    raise AuthError("Email already exists.")
+                return self._activate_customer(existing)
+            customer = Customer(
+                customer_id=f"cust_{secrets.token_urlsafe(12)}",
+                email=normalized,
+                password_hash=hash_password(password),
+                status="ACTIVE",
+                plan="FREE",
+            )
+            self.store.upsert_customer(customer)
+            payload = self._issue_credentials(customer)
+            payload["verification_required"] = False
+            return payload
         if existing and existing.status == "PENDING_EMAIL_VERIFICATION":
             return self._refresh_pending_verification(existing)
 
@@ -121,8 +139,12 @@ class AuthService:
             self._record_failed_verification_attempt(customer)
             raise AuthError("Invalid verification code.")
 
+        return self._activate_customer(customer, issue_credentials=issue_credentials)
+
+    def _activate_customer(self, customer: Customer, issue_credentials: bool = True) -> dict:
         customer.status = "ACTIVE"
-        customer.email_verified_at = utc_now()
+        if self.require_email_verification:
+            customer.email_verified_at = utc_now()
         customer.email_verification_code_hash = None
         customer.email_verification_token_hash = None
         customer.email_verification_expires_at = None
@@ -130,13 +152,17 @@ class AuthService:
         customer.email_verification_locked_until = None
         customer.updated_at = utc_now()
         self.store.upsert_customer(customer)
-
         if not issue_credentials:
             return {
                 "customer": public_customer(customer),
                 "verified": True,
             }
+        payload = self._issue_credentials(customer)
+        if not self.require_email_verification:
+            payload["verification_required"] = False
+        return payload
 
+    def _issue_credentials(self, customer: Customer) -> dict:
         session, refresh_token = self._create_session(customer.customer_id)
         api_key, raw_api_key = self.create_api_key(customer.customer_id)
         return {
