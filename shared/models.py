@@ -87,6 +87,8 @@ class Customer:
     email_verification_code_hash: str | None = None
     email_verification_token_hash: str | None = None
     email_verification_expires_at: int | None = None
+    email_verification_failed_attempts: int = 0
+    email_verification_locked_until: int | None = None
     created_at: str = field(default_factory=lambda: utc_now())
     updated_at: str = field(default_factory=lambda: utc_now())
 

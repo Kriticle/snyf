@@ -847,6 +847,7 @@ locals {
     ATTRIBUTE_LIST_PREFIX      = "attributes"
     OPENSEARCH_ENDPOINT        = "https://${aws_opensearch_domain.catalog.endpoint}"
     DEFAULT_VECTOR_INDEX       = "${local.name}-products-v2"
+    ENVIRONMENT                = var.environment
     LLM_PROVIDER               = var.llm_provider
     DEMO_RATE_LIMIT_PER_MINUTE = tostring(var.demo_search_rate_limit_per_minute)
     DEMO_TOP_K                 = tostring(var.demo_search_top_k)

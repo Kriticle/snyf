@@ -77,7 +77,9 @@
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {
-            const SNYF_API_URL = 'https://xydj4rm9eg.execute-api.us-east-1.amazonaws.com';
+            const SNYF_API_URL = ['localhost', '127.0.0.1', ''].includes(window.location.hostname)
+                ? 'http://127.0.0.1:8000'
+                : 'https://xydj4rm9eg.execute-api.us-east-1.amazonaws.com';
             
             const signupForm = document.getElementById('signup-form');
             const verificationForm = document.getElementById('verification-form');
@@ -183,7 +185,10 @@
 
                     if (data.verification_required) {
                         localStorage.setItem('snyfCompanyName', company_id_raw);
-                        showVerification(email, 'Check your email for the verification code.');
+                        const localCodeHint = data.verification_code
+                            ? ` Local test code: ${data.verification_code}`
+                            : '';
+                        showVerification(email, `Check your email for the verification code.${localCodeHint}`);
                     } else {
                         storeAuth(data);
                         window.location.href = 'dashboard.html';

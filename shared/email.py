@@ -4,6 +4,7 @@ import logging
 import os
 import sys
 from dataclasses import dataclass
+
 import boto3
 
 @dataclass(frozen=True)
@@ -45,8 +46,6 @@ class SesEmailSender(EmailSender):
         self.from_address = from_address
 
     def send_verification_email(self, email: VerificationEmail) -> None:
-
-
         subject = "Verify your Snyf email"
         lines = [
             "Welcome to Snyf.",
@@ -66,8 +65,10 @@ class SesEmailSender(EmailSender):
         )
 
 
-def create_email_sender() -> EmailSender:
+def create_email_sender(allow_console_fallback: bool = False) -> EmailSender:
     from_address = os.getenv("SNYF_EMAIL_FROM") or os.getenv("EMAIL_FROM_ADDRESS")
     if from_address:
         return SesEmailSender(from_address)
-    return ConsoleEmailSender()
+    if allow_console_fallback:
+        return ConsoleEmailSender()
+    raise RuntimeError("SNYF_EMAIL_FROM must be configured for email verification.")

@@ -79,7 +79,7 @@ variable "api_cors_allowed_origins" {
 }
 
 variable "email_from_address" {
-  description = "Verified SES sender address for signup verification emails. Leave empty to log verification emails only."
+  description = "Verified SES sender address for signup verification emails. Required outside local/dev environments."
   type        = string
   default     = ""
 }

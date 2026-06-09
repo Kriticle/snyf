@@ -21,9 +21,11 @@ from shared.store_factory import create_store
 
 try:
     from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
+    from fastapi.middleware.cors import CORSMiddleware
     from pydantic import BaseModel
 except ImportError:  # pragma: no cover - optional runtime adapter
     FastAPI = None
+    CORSMiddleware = None
     File = Form = Header = HTTPException = UploadFile = None
     BaseModel = object
 
@@ -44,10 +46,19 @@ def create_app(data_dir: str = "data", expose_verification_code: bool = False):
         raise RuntimeError("FastAPI is not installed. Use the CLI mode or install requirements.txt.")
 
     app = FastAPI(title="Fashion Attribute Enrichment - Ingestion API")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
     store = create_store(data_dir)
     auth_service = AuthService(
         store,
-        email_sender=create_email_sender(),
+        email_sender=create_email_sender(
+            allow_console_fallback=expose_verification_code or allow_console_email_fallback()
+        ),
         verification_url_base=os.getenv("SNYF_VERIFICATION_URL_BASE"),
         expose_verification_code=expose_verification_code,
     )
@@ -74,7 +85,8 @@ def create_app(data_dir: str = "data", expose_verification_code: bool = False):
     @app.get("/auth/verify-email")
     def verify_email_link(email: str, token: str | None = None, verification_token: str | None = None):
         try:
-            return auth_service.verify_email(email, token=token or verification_token)
+            auth_service.verify_email(email, token=token or verification_token, issue_credentials=False)
+            return {"verified": True, "message": "Email verified. Return to Snyf and log in."}
         except AuthError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -179,7 +191,21 @@ def create_app(data_dir: str = "data", expose_verification_code: bool = False):
 
     return app
 
-app = create_app() if FastAPI is not None else None
+
+def allow_console_email_fallback() -> bool:
+    if os.getenv("ALLOW_CONSOLE_EMAIL_FALLBACK", "").lower() in {"1", "true", "yes"}:
+        return True
+    environment = os.getenv("ENVIRONMENT") or os.getenv("APP_ENV") or os.getenv("STAGE")
+    if (environment or "").lower() in {"local", "test", "dev"}:
+        return True
+    return not (os.getenv("AWS_EXECUTION_ENV") or os.getenv("ECS_CONTAINER_METADATA_URI_V4"))
+
+
+app = (
+    create_app(expose_verification_code=os.getenv("EXPOSE_VERIFICATION_CODE", "").lower() in {"1", "true", "yes"})
+    if FastAPI is not None
+    else None
+)
 
 
 def serialize(value):

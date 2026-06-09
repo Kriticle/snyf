@@ -94,6 +94,38 @@ prod_003,coll_a,Non HTTPS,dresses,http://cdn.example.com/p3.jpg,"[""occasion""]"
             self.assertEqual(login["customer"]["customer_id"], verified["customer"]["customer_id"])
             self.assertIn("session_id", login["session"])
 
+    def test_duplicate_pending_signup_does_not_replace_password(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            auth = self.auth_service(JsonStore(tmp))
+            first = auth.signup("pending@example.com", "original-password")
+            second = auth.signup("pending@example.com", "attacker-password")
+
+            verified = auth.verify_email("pending@example.com", code=second["verification_code"])
+
+            self.assertEqual(first["customer"]["customer_id"], second["customer"]["customer_id"])
+            self.assertEqual(verified["customer"]["status"], "ACTIVE")
+            with self.assertRaises(AuthError):
+                auth.login("pending@example.com", "attacker-password")
+            login = auth.login("pending@example.com", "original-password")
+            self.assertEqual(login["customer"]["customer_id"], verified["customer"]["customer_id"])
+
+    def test_verification_locks_after_repeated_bad_codes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            auth = AuthService(
+                JsonStore(tmp),
+                expose_verification_code=True,
+                verification_max_attempts=2,
+                verification_lock_seconds=60,
+            )
+            signup = auth.signup("locked@example.com", "password123")
+
+            with self.assertRaises(AuthError):
+                auth.verify_email("locked@example.com", code="000000")
+            with self.assertRaises(AuthError):
+                auth.verify_email("locked@example.com", code="111111")
+            with self.assertRaises(AuthError):
+                auth.verify_email("locked@example.com", code=signup["verification_code"])
+
     def test_signup_api_requires_email_verification_before_issuing_tokens(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             client = self.app_client(tmp)
@@ -119,6 +151,30 @@ prod_003,coll_a,Non HTTPS,dresses,http://cdn.example.com/p3.jpg,"[""occasion""]"
             self.assertEqual(verified.status_code, 200)
             self.assertIn("api_key", verified.json())
             self.assertIn("refresh_token", verified.json())
+
+    def test_verification_link_does_not_issue_credentials(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            client = self.app_client(tmp)
+            signup = client.post(
+                "/auth/signup",
+                json={"email": "link@example.com", "password": "password123"},
+            ).json()
+
+            response = client.get(
+                "/auth/verify-email",
+                params={"email": "link@example.com", "verification_token": signup["verification_token"]},
+            )
+            login = client.post(
+                "/auth/login",
+                json={"email": "link@example.com", "password": "password123"},
+            )
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["verified"], True)
+            self.assertNotIn("api_key", response.json())
+            self.assertNotIn("refresh_token", response.json())
+            self.assertEqual(login.status_code, 200)
+            self.assertIn("refresh_token", login.json())
 
     def test_api_key_authenticates_customer(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

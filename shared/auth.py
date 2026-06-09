@@ -27,6 +27,8 @@ class AuthService:
         verification_ttl_seconds: int = 60 * 15,
         verification_url_base: str | None = None,
         expose_verification_code: bool = False,
+        verification_max_attempts: int = 5,
+        verification_lock_seconds: int = 60 * 15,
     ) -> None:
         self.store = store
         self.session_ttl_seconds = session_ttl_seconds
@@ -34,6 +36,8 @@ class AuthService:
         self.verification_ttl_seconds = verification_ttl_seconds
         self.verification_url_base = verification_url_base
         self.expose_verification_code = expose_verification_code
+        self.verification_max_attempts = verification_max_attempts
+        self.verification_lock_seconds = verification_lock_seconds
 
     def signup(self, email: str, password: str) -> dict:
         normalized = normalize_email(email)
@@ -41,30 +45,41 @@ class AuthService:
         existing = self.store.get_customer_by_email(normalized)
         if existing and existing.status == "ACTIVE":
             raise AuthError("Email already exists.")
+        if existing and existing.status == "PENDING_EMAIL_VERIFICATION":
+            return self._refresh_pending_verification(existing)
 
-        code = f"{secrets.randbelow(1_000_000):06d}"
-        token = secrets.token_urlsafe(32)
-        expires_at = int(time.time()) + self.verification_ttl_seconds
-        customer = existing or Customer(
+        customer = Customer(
             customer_id=f"cust_{secrets.token_urlsafe(12)}",
             email=normalized,
-            password_hash="",
+            password_hash=hash_password(password),
             status="PENDING_EMAIL_VERIFICATION",
             plan="FREE",
         )
-        customer.password_hash = hash_password(password)
+        return self._set_pending_verification(customer)
+
+    def _refresh_pending_verification(self, customer: Customer) -> dict:
+        if customer.email_verification_locked_until and customer.email_verification_locked_until > int(time.time()):
+            raise AuthError("Verification is temporarily locked. Try again later.")
+        return self._set_pending_verification(customer)
+
+    def _set_pending_verification(self, customer: Customer) -> dict:
+        code = f"{secrets.randbelow(1_000_000):06d}"
+        token = secrets.token_urlsafe(32)
+        expires_at = int(time.time()) + self.verification_ttl_seconds
         customer.status = "PENDING_EMAIL_VERIFICATION"
         customer.email_verification_code_hash = sha256(code)
         customer.email_verification_token_hash = sha256(token)
         customer.email_verification_expires_at = expires_at
+        customer.email_verification_failed_attempts = 0
+        customer.email_verification_locked_until = None
         customer.updated_at = utc_now()
         self.store.upsert_customer(customer)
 
-        verification_url = self._verification_url(normalized, token)
+        verification_url = self._verification_url(customer.email, token)
         if self.email_sender:
             self.email_sender.send_verification_email(
                 VerificationEmail(
-                    to_email=normalized,
+                    to_email=customer.email,
                     code=code,
                     expires_minutes=max(1, self.verification_ttl_seconds // 60),
                     verification_url=verification_url,
@@ -81,7 +96,13 @@ class AuthService:
             response["verification_token"] = token
         return response
 
-    def verify_email(self, email: str, code: str | None = None, token: str | None = None) -> dict:
+    def verify_email(
+        self,
+        email: str,
+        code: str | None = None,
+        token: str | None = None,
+        issue_credentials: bool = True,
+    ) -> dict:
         customer = self.store.get_customer_by_email(normalize_email(email))
         if customer is None:
             raise AuthError("Invalid verification request.")
@@ -91,10 +112,13 @@ class AuthService:
             raise AuthError("Invalid verification request.")
         if not customer.email_verification_expires_at or customer.email_verification_expires_at < int(time.time()):
             raise AuthError("Verification code has expired.")
+        if customer.email_verification_locked_until and customer.email_verification_locked_until > int(time.time()):
+            raise AuthError("Verification is temporarily locked. Try again later.")
 
         code_ok = bool(code and customer.email_verification_code_hash == sha256(code.strip()))
         token_ok = bool(token and customer.email_verification_token_hash == sha256(token.strip()))
         if not code_ok and not token_ok:
+            self._record_failed_verification_attempt(customer)
             raise AuthError("Invalid verification code.")
 
         customer.status = "ACTIVE"
@@ -102,8 +126,16 @@ class AuthService:
         customer.email_verification_code_hash = None
         customer.email_verification_token_hash = None
         customer.email_verification_expires_at = None
+        customer.email_verification_failed_attempts = 0
+        customer.email_verification_locked_until = None
         customer.updated_at = utc_now()
         self.store.upsert_customer(customer)
+
+        if not issue_credentials:
+            return {
+                "customer": public_customer(customer),
+                "verified": True,
+            }
 
         session, refresh_token = self._create_session(customer.customer_id)
         api_key, raw_api_key = self.create_api_key(customer.customer_id)
@@ -215,6 +247,13 @@ class AuthService:
         separator = "&" if "?" in self.verification_url_base else "?"
         return f"{self.verification_url_base}{separator}{urlencode({'email': email, 'verification_token': token})}"
 
+    def _record_failed_verification_attempt(self, customer: Customer) -> None:
+        customer.email_verification_failed_attempts += 1
+        if customer.email_verification_failed_attempts >= self.verification_max_attempts:
+            customer.email_verification_locked_until = int(time.time()) + self.verification_lock_seconds
+        customer.updated_at = utc_now()
+        self.store.upsert_customer(customer)
+
 
 def normalize_email(email: str) -> str:
     normalized = email.strip().lower()
@@ -252,6 +291,8 @@ def public_customer(customer: Customer) -> dict:
     data.pop("email_verification_code_hash", None)
     data.pop("email_verification_token_hash", None)
     data.pop("email_verification_expires_at", None)
+    data.pop("email_verification_failed_attempts", None)
+    data.pop("email_verification_locked_until", None)
     return data
 
 
