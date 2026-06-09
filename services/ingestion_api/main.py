@@ -198,6 +198,16 @@ def allow_console_email_fallback() -> bool:
     environment = os.getenv("ENVIRONMENT") or os.getenv("APP_ENV") or os.getenv("STAGE")
     if (environment or "").lower() in {"local", "test", "dev"}:
         return True
+    resource_names = " ".join(
+        [
+            os.getenv("PRODUCT_TABLE_NAME", ""),
+            os.getenv("COLLECTION_TABLE_NAME", ""),
+            os.getenv("PRODUCT_QUEUE_URL", ""),
+            os.getenv("UPLOAD_BUCKET", ""),
+        ]
+    ).lower()
+    if "dev" in resource_names:
+        return True
     return not (os.getenv("AWS_EXECUTION_ENV") or os.getenv("ECS_CONTAINER_METADATA_URI_V4"))
 
 
