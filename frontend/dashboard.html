@@ -10,6 +10,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="styles.css">
+    <script src="analytics.js"></script>
     <script>
         tailwind.config = {
             theme: {
@@ -227,6 +228,8 @@
 
         // --- AUTH CHECK ---
         const logout = () => {
+            window.snyfAnalytics?.capture('logout_clicked');
+            window.snyfAnalytics?.reset();
             Object.keys(localStorage)
                 .filter((key) => key.startsWith('snyf'))
                 .forEach((key) => localStorage.removeItem(key));
@@ -410,6 +413,7 @@
                 localStorage.setItem('snyfApiKey', g_apiKey);
                 isKeyVisible = true;
                 updateKeyDisplay();
+                window.snyfAnalytics?.capture('api_key_generated');
                 await refreshCollectionConfig().catch((error) => showStatus(error.message, 'error'));
                 showStatus('New API key generated.', 'success');
             } catch (error) {
@@ -437,6 +441,10 @@
 
             resultsContainer.innerHTML = `<div class="col-span-full text-center py-10"><i class="fas fa-circle-notch fa-spin text-primary text-2xl"></i><p class="text-gray-400 mt-2">Searching your catalog...</p></div>`;
             catalogUploadPrompt.style.display = 'none';
+            window.snyfAnalytics?.capture('dashboard_search_submitted', {
+                collection_id: collectionId,
+                query_length: query.length,
+            });
 
             try {
                 const response = await fetch(`${SNYF_API_URL}/search`, {
@@ -459,8 +467,17 @@
                 }
 
                 populateCatalog(data.results, true);
+                window.snyfAnalytics?.capture('dashboard_search_completed', {
+                    collection_id: collectionId,
+                    result_count: (data.results || []).length,
+                    total_ms: data.metrics?.search?.total_ms,
+                });
 
             } catch (error) {
+                window.snyfAnalytics?.capture('dashboard_search_failed', {
+                    collection_id: collectionId,
+                    message: error.message,
+                });
                 console.error("Dashboard Search Error:", error);
                 resultsContainer.innerHTML = `<div class="col-span-full text-center py-10"><p class="text-red-500">Search failed: ${error.message}</p></div>`;
             }
@@ -549,6 +566,11 @@
             const formData = new FormData();
             formData.append('csv_file', csvFile);
             formData.append('attribute_list_id', attributeListId);
+            window.snyfAnalytics?.capture('catalog_upload_started', {
+                collection_id: collectionId,
+                attribute_list_id: attributeListId,
+                file_size: csvFile.size,
+            });
 
             const response = await fetch(`${SNYF_API_URL}/collections/${encodeURIComponent(collectionId)}/upload`, {
                 method: 'POST',
@@ -587,12 +609,26 @@
                 if (data.status === 'READY') {
                     setUploadStatus(`Catalog ready. ${enrichedRows}/${acceptedRows} products indexed.`, 'success');
                     resultsContainer.innerHTML = `<div class="col-span-full text-center py-10"><p class="text-green-400">Catalog ready. Search this collection now.</p></div>`;
+                    window.snyfAnalytics?.capture('catalog_upload_completed', {
+                        job_id: jobId,
+                        accepted_rows: acceptedRows,
+                        enriched_rows: enrichedRows,
+                        failed_rows: failedRows,
+                        status: data.status,
+                    });
                     return data;
                 }
 
                 if (data.status === 'COMPLETED_WITH_ERRORS') {
                     setUploadStatus(`Catalog finished with ${failedRows} failed product(s). ${enrichedRows}/${acceptedRows} indexed.`, 'error');
                     resultsContainer.innerHTML = `<div class="col-span-full text-center py-10"><p class="text-yellow-400">Some products failed enrichment. Search will use the indexed products.</p></div>`;
+                    window.snyfAnalytics?.capture('catalog_upload_completed', {
+                        job_id: jobId,
+                        accepted_rows: acceptedRows,
+                        enriched_rows: enrichedRows,
+                        failed_rows: failedRows,
+                        status: data.status,
+                    });
                     return data;
                 }
 
@@ -605,6 +641,7 @@
         };
 
         document.addEventListener('DOMContentLoaded', () => {
+            window.snyfAnalytics?.identify(g_customer);
             loadDashboardData();
             generateKeyBtn.addEventListener('click', handleGenerateKey);
             saveCollectionBtn.addEventListener('click', async () => {
@@ -643,10 +680,17 @@
                         resultsContainer.innerHTML = `<div class="col-span-full text-center py-10"><i class="fas fa-circle-notch fa-spin text-primary text-2xl"></i><p class="text-gray-400 mt-2">Enriching catalog...</p></div>`;
                         pollIngestionJob(result.job_id, rowCount).catch((error) => {
                             setUploadStatus(error.message, 'error');
+                            window.snyfAnalytics?.capture('catalog_upload_failed', {
+                                job_id: result.job_id,
+                                message: error.message,
+                            });
                         });
                     }
                 } catch (error) {
                     setUploadStatus(error.message, 'error');
+                    window.snyfAnalytics?.capture('catalog_upload_failed', {
+                        message: error.message,
+                    });
                 } finally {
                     uploadSubmitBtn.disabled = false;
                     uploadSubmitBtn.innerHTML = 'Upload Catalog';

@@ -10,6 +10,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="styles.css">
+    <script src="analytics.js"></script>
     <script src="https://unpkg.com/@studio-freight/lenis@1.0.42/dist/lenis.min.js"></script>
     <script>
         tailwind.config = {
@@ -355,13 +356,23 @@
                     }); 
                 };
 
-                const performSearch = async (query) => { 
+                const performSearch = async (query, source = 'manual') => { 
                     if (!canSearchDemo()) {
+                        window.snyfAnalytics?.capture('demo_search_rate_limited', {
+                            mode: currentSearchMode,
+                            query_length: query.length,
+                            source,
+                        });
                         resultsContainer.innerHTML = `<div class="col-span-full text-center py-10"><p class="text-yellow-500">Demo search is rate limited. Please try again in a minute.</p></div>`;
                         return;
                     }
 
                     resultsContainer.innerHTML = `<p class="col-span-full text-center text-gray-400">Searching...</p>`;
+                    window.snyfAnalytics?.capture('demo_search_submitted', {
+                        mode: currentSearchMode,
+                        query_length: query.length,
+                        source,
+                    });
                     
                     if (currentSearchMode === 'snyf') {
                         try {
@@ -376,8 +387,17 @@
                             }
                             
                             const data = await response.json();
+                            window.snyfAnalytics?.capture('demo_search_completed', {
+                                mode: currentSearchMode,
+                                result_count: (data.results || []).length,
+                                query_length: query.length,
+                            });
                             displayResults(data.results);
                         } catch (error) {
+                            window.snyfAnalytics?.capture('demo_search_failed', {
+                                mode: currentSearchMode,
+                                message: error.message,
+                            });
                             console.error("Snyf Search Error:", error);
                             resultsContainer.innerHTML = `<div class="col-span-full text-center py-10"><p class="text-red-500">Search failed: ${error.message}</p></div>`;
                         }
@@ -394,8 +414,17 @@
                             }
 
                             const data = await response.json();
+                            window.snyfAnalytics?.capture('demo_search_completed', {
+                                mode: currentSearchMode,
+                                result_count: (data.results || []).length,
+                                query_length: query.length,
+                            });
                             displayResults(data.results);
                         } catch (error) { 
+                            window.snyfAnalytics?.capture('demo_search_failed', {
+                                mode: currentSearchMode,
+                                message: error.message,
+                            });
                             console.error(error);
                             resultsContainer.innerHTML = `<div class="col-span-full text-center py-10"><p class="text-red-500">Keyword search failed: ${error.message}</p></div>`; 
                         } 
@@ -404,16 +433,16 @@
 
                 const fetchInitialCatalog = async () => { 
                     resultsContainer.innerHTML = `<p class="col-span-full text-center text-gray-400">Loading initial catalog items...</p>`; 
-                    await performSearch("beach wedding dress");
+                    await performSearch("beach wedding dress", 'initial_catalog');
                 };
-                
-                snyfBtn.addEventListener('click', () => { if (currentSearchMode === 'snyf') return; currentSearchMode = 'snyf'; updateToggleUI(); const query = searchInput.value.trim(); if (query) performSearch(query); });
-                normalBtn.addEventListener('click', () => { if (currentSearchMode === 'normal') return; currentSearchMode = 'normal'; updateToggleUI(); const query = searchInput.value.trim(); if (query) performSearch(query); });
-                searchForm.addEventListener('submit', (e) => { e.preventDefault(); const query = searchInput.value.trim(); if (query) performSearch(query); });
+	                
+                snyfBtn.addEventListener('click', () => { if (currentSearchMode === 'snyf') return; currentSearchMode = 'snyf'; updateToggleUI(); const query = searchInput.value.trim(); if (query) performSearch(query, 'mode_toggle'); });
+                normalBtn.addEventListener('click', () => { if (currentSearchMode === 'normal') return; currentSearchMode = 'normal'; updateToggleUI(); const query = searchInput.value.trim(); if (query) performSearch(query, 'mode_toggle'); });
+                searchForm.addEventListener('submit', (e) => { e.preventDefault(); const query = searchInput.value.trim(); if (query) performSearch(query, 'form_submit'); });
                 document.querySelectorAll('.sample-query-btn').forEach((button) => {
                     button.addEventListener('click', () => {
                         searchInput.value = button.dataset.query || '';
-                        performSearch(searchInput.value);
+                        performSearch(searchInput.value, 'sample_query');
                     });
                 });
                 

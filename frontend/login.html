@@ -10,6 +10,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="styles.css">
+    <script src="analytics.js"></script>
     <script>
         tailwind.config = {
             theme: {
@@ -79,6 +80,7 @@
 
                 const email = document.getElementById('email').value;
                 const password = document.getElementById('password').value;
+                window.snyfAnalytics?.capture('login_started');
 
                 try {
                     const response = await fetch(`${SNYF_API_URL}/auth/login`, {
@@ -96,9 +98,16 @@
                     localStorage.setItem('snyfCustomer', JSON.stringify(data.customer));
                     localStorage.setItem('snyfSession', JSON.stringify(data.session));
                     localStorage.setItem('snyfRefreshToken', data.refresh_token);
+                    window.snyfAnalytics?.identify(data.customer);
+                    window.snyfAnalytics?.capture('login_completed', {
+                        plan: data.customer?.plan,
+                    });
                     window.location.href = 'dashboard.html';
 
                 } catch (error) {
+                    window.snyfAnalytics?.capture('login_failed', {
+                        message: error.message,
+                    });
                     // Show error message
                     errorMsg.textContent = error.message;
                     errorMsg.classList.remove('hidden');

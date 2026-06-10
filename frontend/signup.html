@@ -10,6 +10,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="styles.css">
+    <script src="analytics.js"></script>
     <script>
         tailwind.config = {
             theme: {
@@ -169,6 +170,9 @@
 
                 btnSpan.textContent = 'Creating Account...';
                 submitBtn.disabled = true;
+                window.snyfAnalytics?.capture('signup_started', {
+                    has_company_name: Boolean(company_id_raw),
+                });
 
                 try {
                     const response = await fetch(`${SNYF_API_URL}/auth/signup`, {
@@ -185,16 +189,25 @@
 
                     if (data.verification_required) {
                         localStorage.setItem('snyfCompanyName', company_id_raw);
+                        window.snyfAnalytics?.capture('signup_verification_required');
                         const localCodeHint = data.verification_code
                             ? ` Local test code: ${data.verification_code}`
                             : '';
                         showVerification(email, `Check your email for the verification code.${localCodeHint}`);
                     } else {
                         storeAuth(data);
+                        window.snyfAnalytics?.identify(data.customer);
+                        window.snyfAnalytics?.capture('signup_completed', {
+                            verification_required: false,
+                            plan: data.customer?.plan,
+                        });
                         window.location.href = 'dashboard.html';
                     }
 
                 } catch (error) {
+                    window.snyfAnalytics?.capture('signup_failed', {
+                        message: error.message,
+                    });
                     errorMsg.textContent = error.message;
                     errorMsg.classList.remove('hidden');
                     
@@ -228,8 +241,16 @@
                     }
 
                     storeAuth(data);
+                    window.snyfAnalytics?.identify(data.customer);
+                    window.snyfAnalytics?.capture('signup_completed', {
+                        verification_required: true,
+                        plan: data.customer?.plan,
+                    });
                     window.location.href = 'dashboard.html';
                 } catch (error) {
+                    window.snyfAnalytics?.capture('signup_verification_failed', {
+                        message: error.message,
+                    });
                     verificationErrorMsg.textContent = error.message;
                     verificationErrorMsg.classList.remove('hidden');
                     btnSpan.textContent = 'Verify Email';
