@@ -1,0 +1,60 @@
+name: service-build-validation
+
+on:
+  pull_request:
+    paths:
+      - "services/**"
+      - "shared/**"
+      - "functions/**"
+      - "requirements.txt"
+      - ".github/workflows/service-builds.yml"
+  push:
+    branches: [main, mainline]
+    paths:
+      - "services/**"
+      - "shared/**"
+      - "functions/**"
+      - "requirements.txt"
+      - ".github/workflows/service-builds.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run tests
+        run: python -m unittest discover -s tests -v
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [ingestion_api, search_api, enrichment_worker]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build service image without publishing
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/${{ matrix.service }}/Dockerfile
+          push: false
+          tags: snyf-${{ matrix.service }}:ci

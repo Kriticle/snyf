@@ -1,10 +1,10 @@
-# Fashion Attribute Enrichment Platform
+# Snyf: AI Catalog Enrichment and Semantic Search MVP
 
 CSV ingestion -> LLM enrichment -> OpenSearch kNN vector retrieval -> cached LLM-assisted reranking.
 
-This repo contains a runnable local MVP plus Terraform and deployment workflows for the AWS production shape.
+This repository is a portfolio MVP: it contains a runnable local implementation and Terraform describing an AWS-backed architecture. It is not a currently hosted or production service, and no public API endpoint is provided. The checked-in GitHub Actions workflows run tests and static Terraform validation only; they do not plan, apply, or deploy infrastructure.
 
-For endpoint-level request/response details, see [docs/API.md](/Users/kriti/Documents/New%20project/docs/API.md).
+For endpoint-level request/response details, see [docs/API.md](docs/API.md).
 
 ## What It Does
 
@@ -105,11 +105,13 @@ export INGESTION_URL=http://localhost:8000
 export SEARCH_URL=http://localhost:8001
 ```
 
-Set the deployed API Gateway URL:
+For commands that use a single reverse-proxied API base URL, set it explicitly:
 
 ```bash
-export API_URL=https://xydj4rm9eg.execute-api.us-east-1.amazonaws.com
+export API_URL=http://localhost:8000
 ```
+
+The repository does not publish a live API URL. When running the two development services directly, use `INGESTION_URL` for ingestion/auth routes and `SEARCH_URL` for search routes.
 
 ### Add Your Own CSV
 
@@ -134,56 +136,7 @@ Rules:
 - Upload one collection at a time: the URL collection is the collection being indexed.
 - After upload, poll the returned `job_id` until status is `READY`, then search the same `collection_id`.
 
-### Deployed End-to-End Smoke Test
-
-This uses the currently deployed AWS stack, OpenAI-backed enrichment, and the shared smoke-test attribute list in S3.
-
-```bash
-export API_URL=https://xydj4rm9eg.execute-api.us-east-1.amazonaws.com
-export COLLECTION_ID="readme_smoke_$(date +%s)"
-
-SIGNUP_RESPONSE=$(curl -sS -X POST "$API_URL/auth/signup" \
-  -H "content-type: application/json" \
-  -d '{"email":"readme-smoke-'"$(date +%s)"'@example.com","password":"password123"}')
-
-echo "$SIGNUP_RESPONSE" | jq
-echo "Enter the emailed verification code:"
-read -r VERIFICATION_CODE
-
-VERIFY_RESPONSE=$(curl -sS -X POST "$API_URL/auth/verify-email" \
-  -H "content-type: application/json" \
-  -d '{"email":"'"$(printf '%s' "$SIGNUP_RESPONSE" | jq -r '.customer.email')"'","code":"'"$VERIFICATION_CODE"'"}')
-
-export API_KEY=$(printf '%s' "$VERIFY_RESPONSE" | jq -r '.api_key')
-export REFRESH_TOKEN=$(printf '%s' "$VERIFY_RESPONSE" | jq -r '.refresh_token')
-
-curl -sS "$API_URL/auth/api-keys" \
-  -H "authorization: Bearer $REFRESH_TOKEN" | jq
-
-cat > /tmp/fashion_catalog.csv <<EOF
-product_id,name,image_urls,category,description,price,currency,brand
-prod_001,Flowy Resort Dress,https://images.unsplash.com/photo-1515372039744-b8f02a3ae446?w=800,dresses,"Flowy ivory linen midi dress for beach vacation dinners",128,USD,TestBrand
-prod_002,Structured Office Blazer,https://images.unsplash.com/photo-1591369822096-ffd140ec948f?w=800,jacket,"Tailored navy blazer with structured office energy",188,USD,TestBrand
-EOF
-
-curl -sS -X POST "$API_URL/collections/$COLLECTION_ID/upload" \
-  -H "x-api-key: $API_KEY" \
-  -F attribute_list_id=smoke-fashion-v1 \
-  -F csv_file=@/tmp/fashion_catalog.csv | jq
-
-sleep 45
-
-curl -sS -X POST "$API_URL/search" \
-  -H "content-type: application/json" \
-  -H "x-api-key: $API_KEY" \
-  -d '{
-    "collection_id": "'"$COLLECTION_ID"'",
-    "query": "flowy beach vacation look",
-    "top_k": 5
-  }' | jq
-```
-
-Expected search response includes ranked products and `image_urls`:
+An expected search response includes ranked products and `image_urls`:
 
 ```json
 {
@@ -221,7 +174,7 @@ Expected response:
 { "status": "ok" }
 ```
 
-The deployed API Gateway currently exposes the product API routes, not a public `/health` route. Use signup, upload, or search smoke tests to verify the deployed stack from outside the VPC.
+These health checks describe local development only.
 
 ### Signup
 
@@ -304,7 +257,7 @@ curl -s -X POST "$INGESTION_URL/collections/coll_ss25/upload" \
   -F csv_file=@examples/catalog.csv
 ```
 
-Production upload:
+Reverse-proxied API upload:
 
 ```bash
 curl -s -X POST "$INGESTION_URL/collections/coll_ss25/upload" \
@@ -475,7 +428,7 @@ Invalid `top_k`:
 
 ### Public website demo search
 
-The deployed marketing-site demo must not include customer API keys in browser code. It calls demo-only routes that are locked server-side to the configured demo collection:
+The optional marketing-site demo must not include customer API keys in browser code. When configured against an API, it calls demo-only routes that are locked server-side to the configured demo collection:
 
 ```bash
 curl -sS -X POST "$SEARCH_URL/search/demo" \
@@ -549,7 +502,7 @@ Latency instrumentation:
 
 ## Plan Limits
 
-Plan limits are in [shared/plans.py](/Users/kriti/Documents/New%20project/shared/plans.py).
+Plan limits are in [shared/plans.py](shared/plans.py).
 
 Current defaults:
 
@@ -576,7 +529,7 @@ Usage is tracked monthly in `UsageCounters`.
 
 ## Infrastructure
 
-Terraform lives in [infra/terraform](/Users/kriti/Documents/New%20project/infra/terraform).
+Terraform lives in [infra/terraform](infra/terraform).
 
 It provisions:
 
@@ -625,11 +578,13 @@ Format:
 terraform -chdir=infra/terraform fmt -recursive
 ```
 
-Initialize:
+Initialize without a remote backend:
 
 ```bash
-terraform -chdir=infra/terraform init
+terraform -chdir=infra/terraform init -backend=false
 ```
+
+For a private deployment, copy `infra/terraform/backend.tf.example` to `backend.tf`, replace every placeholder, and keep the account-specific file out of version control.
 
 Validate:
 
@@ -637,58 +592,24 @@ Validate:
 terraform -chdir=infra/terraform validate
 ```
 
-Plan:
+The configuration is retained as an architecture example. Before using it in an AWS account, supply your own backend configuration and variables, review every resource and cost implication, and create a separate deployment process. This public repository intentionally provides no automated plan or apply path.
 
-```bash
-terraform -chdir=infra/terraform plan \
-  -var='aws_region=us-east-1' \
-  -var='vpc_id=vpc-xxxxxxxx' \
-  -var='private_subnet_ids=["subnet-private-a","subnet-private-b"]' \
-  -var='public_subnet_ids=["subnet-public-a","subnet-public-b"]' \
-  -var='attribute_list_object_arns=["arn:aws:s3:::customer-config-bucket/attributes/*"]'
-```
+## Validation Workflows
 
-Apply:
-
-```bash
-terraform -chdir=infra/terraform apply
-```
-
-Local note: `terraform init` succeeded in this workspace, but `terraform validate` is blocked locally by an AWS provider plugin handshake issue on this Mac runtime. CI on Ubuntu should run validation normally.
-
-## Deployment Pipeline
-
-Workflows live in [.github/workflows](/Users/kriti/Documents/New%20project/.github/workflows).
-
-Required GitHub secret:
-
-```text
-AWS_ROLE_ARN
-```
-
-Required GitHub variables:
-
-```text
-AWS_REGION=us-east-1
-ECS_CLUSTER=fashion-enrichment-dev
-PROJECT_ENV_PREFIX=fashion-enrichment-dev
-```
+Workflows live in [.github/workflows](.github/workflows).
 
 Workflows:
 
 - `ci.yml`
   - Python tests
-  - Terraform formatting
+  - Terraform formatting, offline initialization, and validation
 
 - `terraform.yml`
-  - PR: init, validate, plan
-  - main: apply behind `production` environment approval
+  - Terraform formatting, offline initialization, and validation when infrastructure files change
 
-- `deploy-services.yml`
-  - Builds changed service images
-  - Pushes to ECR
-  - Forces ECS service deployment
-  - Manual input: `all`, `ingestion_api`, `search_api`, `enrichment_worker`
+- `service-builds.yml`
+  - Builds service images locally in GitHub Actions to verify the Dockerfiles
+  - Does not authenticate to AWS, push images, or update ECS services
 
 ## Docker Build Commands
 
@@ -700,52 +621,30 @@ docker build -f services/search_api/Dockerfile -t fashion-search-api .
 docker build -f services/enrichment_worker/Dockerfile -t fashion-enrichment-worker .
 ```
 
-Build and push ECS-compatible images from Apple Silicon or any non-amd64 machine:
+Build ECS-compatible images from Apple Silicon or any non-amd64 machine:
 
 ```bash
-AWS_ACCOUNT_ID=311549965729
-AWS_REGION=us-east-1
-ECR_BASE="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/fashion-enrichment-dev"
-
-aws ecr get-login-password --region "$AWS_REGION" \
-  | docker login --username AWS --password-stdin "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
+docker buildx build --platform linux/amd64 \
+  -t snyf-ingestion-api:local \
+  --load -f services/ingestion_api/Dockerfile .
 
 docker buildx build --platform linux/amd64 \
-  -t "$ECR_BASE/ingestion-api:latest" \
-  --push -f services/ingestion_api/Dockerfile .
+  -t snyf-search-api:local \
+  --load -f services/search_api/Dockerfile .
 
 docker buildx build --platform linux/amd64 \
-  -t "$ECR_BASE/search-api:latest" \
-  --push -f services/search_api/Dockerfile .
-
-docker buildx build --platform linux/amd64 \
-  -t "$ECR_BASE/enrichment-worker:latest" \
-  --push -f services/enrichment_worker/Dockerfile .
-
-aws ecs update-service --region "$AWS_REGION" \
-  --cluster fashion-enrichment-dev \
-  --service fashion-enrichment-dev-ingestion-api \
-  --force-new-deployment
-
-aws ecs update-service --region "$AWS_REGION" \
-  --cluster fashion-enrichment-dev \
-  --service fashion-enrichment-dev-search-api \
-  --force-new-deployment
-
-aws ecs update-service --region "$AWS_REGION" \
-  --cluster fashion-enrichment-dev \
-  --service fashion-enrichment-dev-enrichment-worker \
-  --force-new-deployment
-
-aws ecs wait services-stable --region "$AWS_REGION" \
-  --cluster fashion-enrichment-dev \
-  --services fashion-enrichment-dev-ingestion-api fashion-enrichment-dev-search-api fashion-enrichment-dev-enrichment-worker
+  -t snyf-enrichment-worker:local \
+  --load -f services/enrichment_worker/Dockerfile .
 ```
 
-## Production Extension Points
+## Production Readiness Gaps
 
 - Harden the DynamoDB/SQS/OpenSearch adapters for pagination, conditional writes, and operational backfills.
-- Production LLM mode uses [functions/openai_llm.py](/Users/kriti/Documents/New%20project/functions/openai_llm.py) with `LLM_PROVIDER=openai` and `OPENAI_API_KEY` from Secrets Manager.
-- Keep [functions/fake_llm.py](/Users/kriti/Documents/New%20project/functions/fake_llm.py) for local/infra-only smoke tests.
+- An OpenAI-backed provider is implemented in [functions/openai_llm.py](functions/openai_llm.py); any deployment must inject credentials through a secret manager.
+- Keep [functions/fake_llm.py](functions/fake_llm.py) for deterministic local and infrastructure-only smoke tests.
 - Add retry metadata and job-error persistence for failed worker rows.
 - Add job status and job error endpoints backed by `IngestionJobs` and `IngestionJobErrors`.
+
+## License
+
+This project is available under the [MIT License](LICENSE).

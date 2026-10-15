@@ -60,7 +60,7 @@
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {
-            const SNYF_API_URL = 'https://xydj4rm9eg.execute-api.us-east-1.amazonaws.com';
+            const SNYF_API_URL = window.SNYF_API_URL || '';
             
             const loginForm = document.getElementById('login-form');
             const submitBtn = document.getElementById('login-submit-btn');

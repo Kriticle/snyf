@@ -3,9 +3,37 @@ __pycache__/
 .DS_Store
 .pytest_cache/
 .venv/
+.env
+.env.*
+!.env.example
 data/
 artifacts/rendered*/
 **/.terraform/
 *.tfstate
 *.tfstate.backup
+*.tfvars
+*.tfvars.json
+*.auto.tfvars
+*.auto.tfvars.json
+infra/terraform/backend.tf
+backend.hcl
+*.backend.hcl
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
 tfplan*
+
+# Local credentials and private keys
+credentials
+credentials.*
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Local tooling and editor overrides
+.terraformrc
+terraform.rc
+.idea/
+.vscode/

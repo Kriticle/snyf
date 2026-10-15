@@ -78,9 +78,7 @@
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {
-            const SNYF_API_URL = ['localhost', '127.0.0.1', ''].includes(window.location.hostname)
-                ? 'http://127.0.0.1:8000'
-                : 'https://xydj4rm9eg.execute-api.us-east-1.amazonaws.com';
+            const SNYF_API_URL = window.SNYF_API_URL || '';
             
             const signupForm = document.getElementById('signup-form');
             const verificationForm = document.getElementById('verification-form');

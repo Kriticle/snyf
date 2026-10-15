@@ -81,7 +81,7 @@
                   resultsContainer = document.getElementById('results-container'), paginationControls = document.getElementById('pagination-controls'),
                   resultsCount = document.getElementById('results-count');
             
-            const API_BASE_URL = 'https://xydj4rm9eg.execute-api.us-east-1.amazonaws.com', PAGE_SIZE = 12;
+            const API_BASE_URL = window.SNYF_API_URL || '', PAGE_SIZE = 12;
             let currentSearchMode = 'snyf', currentPage = 1, totalPages = 1, totalItems = 0, lastQuery = '';
 
             const updateToggleUI = () => {

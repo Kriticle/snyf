@@ -1,4 +1,4 @@
-name: terraform
+name: terraform-validation
 
 on:
   pull_request:
@@ -11,44 +11,17 @@ on:
       - "infra/terraform/**"
       - ".github/workflows/terraform.yml"
   workflow_dispatch:
-    inputs:
-      apply:
-        description: "Apply the Terraform plan after the plan job succeeds."
-        required: true
-        type: boolean
-        default: false
-
-concurrency:
-  group: terraform-${{ github.ref }}
-  cancel-in-progress: false
 
 permissions:
   contents: read
-  id-token: write
-  pull-requests: write
 
 env:
   TF_IN_AUTOMATION: "true"
   TF_INPUT: "false"
-  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
-  AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
-  TF_VAR_vpc_id: ${{ vars.VPC_ID }}
-  TF_VAR_private_subnet_ids: ${{ vars.PRIVATE_SUBNET_IDS }}
-  TF_VAR_public_subnet_ids: ${{ vars.PUBLIC_SUBNET_IDS }}
-  TF_VAR_assign_public_ip: ${{ vars.ASSIGN_PUBLIC_IP || 'false' }}
-  TF_VAR_llm_provider: ${{ vars.LLM_PROVIDER || 'fake' }}
-  TF_VAR_openai_api_key_secret_arn: ${{ secrets.OPENAI_API_KEY_SECRET_ARN || '' }}
-  TF_VAR_email_from_address: ${{ vars.EMAIL_FROM_ADDRESS || '' }}
-  TF_VAR_email_verification_url_base: ${{ vars.EMAIL_VERIFICATION_URL_BASE || '' }}
 
 jobs:
-  plan:
+  validate:
     runs-on: ubuntu-latest
-    outputs:
-      plan_created: ${{ steps.aws.outputs.enabled }}
-    defaults:
-      run:
-        working-directory: infra/terraform
     steps:
       - uses: actions/checkout@v4
 
@@ -56,83 +29,11 @@ jobs:
         with:
           terraform_version: "1.15.0"
 
-      - name: Check AWS credentials
-        id: aws
-        run: |
-          if [ -n "$AWS_ROLE_ARN" ]; then
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-          fi
+      - name: Check formatting
+        run: terraform -chdir=infra/terraform fmt -check -recursive
 
-      - name: Terraform init for validation
-        if: steps.aws.outputs.enabled != 'true'
-        run: terraform init -backend=false
+      - name: Initialize without a backend
+        run: terraform -chdir=infra/terraform init -backend=false
 
-      - name: Terraform validate
-        if: steps.aws.outputs.enabled != 'true'
-        run: terraform validate
-
-      - name: Skip Terraform plan
-        if: steps.aws.outputs.enabled != 'true'
-        run: echo "AWS_ROLE_ARN is not configured; validated Terraform only and skipped plan/apply."
-
-      - name: Configure AWS credentials
-        if: steps.aws.outputs.enabled == 'true'
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ env.AWS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Terraform init
-        if: steps.aws.outputs.enabled == 'true'
-        run: terraform init
-
-      - name: Terraform validate
-        if: steps.aws.outputs.enabled == 'true'
-        run: terraform validate
-
-      - name: Terraform plan
-        if: steps.aws.outputs.enabled == 'true'
-        run: terraform plan -out=tfplan
-
-      - name: Upload plan
-        if: steps.aws.outputs.enabled == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: terraform-plan
-          path: infra/terraform/tfplan
-          retention-days: 5
-
-  apply:
-    if: github.event_name == 'workflow_dispatch' && inputs.apply == true && needs.plan.outputs.plan_created == 'true'
-    needs: plan
-    runs-on: ubuntu-latest
-    environment: production
-    defaults:
-      run:
-        working-directory: infra/terraform
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: "1.15.0"
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ env.AWS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Terraform init
-        run: terraform init
-
-      - name: Download plan
-        uses: actions/download-artifact@v4
-        with:
-          name: terraform-plan
-          path: infra/terraform
-
-      - name: Terraform apply
-        run: terraform apply -auto-approve tfplan
+      - name: Validate configuration
+        run: terraform -chdir=infra/terraform validate

@@ -23,7 +23,7 @@ jobs:
       - name: Run tests
         run: python -m unittest discover -s tests -v
 
-  terraform-format:
+  terraform-validation:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -34,3 +34,9 @@ jobs:
 
       - name: Check Terraform formatting
         run: terraform -chdir=infra/terraform fmt -check -recursive
+
+      - name: Initialize Terraform without a backend
+        run: terraform -chdir=infra/terraform init -backend=false
+
+      - name: Validate Terraform
+        run: terraform -chdir=infra/terraform validate

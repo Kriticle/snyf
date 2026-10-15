@@ -2,18 +2,16 @@
 
 This API lets customers create an account, upload a product catalog CSV for enrichment, and search an enriched collection.
 
-Production base URL:
+## Availability
 
-```text
-https://xydj4rm9eg.execute-api.us-east-1.amazonaws.com
+This repository documents an MVP and does not provide a live public API. Start the services locally and set the base URLs in your shell:
+
+```bash
+export INGESTION_URL=http://localhost:8000
+export SEARCH_URL=http://localhost:8001
 ```
 
-Local development uses two services:
-
-```text
-Ingestion/auth: http://localhost:8000
-Search:         http://localhost:8001
-```
+Examples using `API_URL` assume that you have configured a single reverse proxy in front of both services. The repository does not define or endorse a public endpoint.
 
 ## Authentication
 
@@ -518,12 +516,12 @@ Limit error example:
 }
 ```
 
-## Current Production Notes
+## AWS Architecture Notes
 
-- Public routing uses API Gateway HTTP API.
+- The Terraform reference architecture uses API Gateway HTTP API for routing.
 - Customer API auth is app-level via `x-api-key`.
 - Product images remain hosted by the customer/CDN; we store and return their URLs.
-- Attribute-list files are read from S3 in production.
-- Current deployment uses `LLM_PROVIDER=openai` with `OPENAI_API_KEY` injected from AWS Secrets Manager.
+- The AWS storage adapter reads attribute-list files from S3.
+- The OpenAI provider expects `OPENAI_API_KEY` to be supplied through a secret manager in any deployment.
 - Search uses OpenSearch kNN vector retrieval and a DynamoDB `SearchCache` table for persistent query/embedding cache entries with TTL.
-- For low-cost infra-only smoke tests, Terraform can be applied with `llm_provider=fake`.
+- `llm_provider=fake` supports deterministic local and infrastructure-only smoke tests.
