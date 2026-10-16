@@ -42,6 +42,46 @@ variable "worker_desired_count" {
   default     = 1
 }
 
+variable "worker_min_count" {
+  description = "Minimum enrichment worker task count while queue-depth autoscaling is enabled."
+  type        = number
+  default     = 1
+}
+
+variable "worker_max_count" {
+  description = "Maximum enrichment worker task count for queue-depth autoscaling."
+  type        = number
+  default     = 10
+}
+
+variable "worker_queue_target_depth" {
+  description = "Approximate visible SQS messages targeted by ECS worker autoscaling."
+  type        = number
+  default     = 10
+}
+
+variable "alarm_topic_arn" {
+  description = "Optional SNS topic ARN for CloudWatch alarm notifications."
+  type        = string
+  default     = ""
+}
+
+variable "image_digests" {
+  description = "Required immutable ECR image digests for each service. Terraform has no mutable-tag fallback."
+  type = object({
+    ingestion_api     = string
+    search_api        = string
+    enrichment_worker = string
+  })
+
+  validation {
+    condition = alltrue([
+      for digest in values(var.image_digests) : can(regex("^sha256:[0-9a-f]{64}$", digest))
+    ])
+    error_message = "Every service image must be pinned to a sha256 digest."
+  }
+}
+
 variable "assign_public_ip" {
   description = "Assign public IPs to ECS tasks. Useful for default-VPC deployments without NAT."
   type        = bool

@@ -26,6 +26,10 @@ output "usage_counters_table_name" {
   value = aws_dynamodb_table.usage_counters.name
 }
 
+output "rate_limits_table_name" {
+  value = aws_dynamodb_table.rate_limits.name
+}
+
 output "search_cache_table_name" {
   value = aws_dynamodb_table.search_cache.name
 }
@@ -52,6 +56,10 @@ output "api_gateway_endpoint" {
 
 output "internal_alb_dns_name" {
   value = aws_lb.api.dns_name
+}
+
+output "operations_dashboard_name" {
+  value = aws_cloudwatch_dashboard.operations.dashboard_name
 }
 
 output "ecr_repositories" {

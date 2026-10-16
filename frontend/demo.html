@@ -81,7 +81,8 @@
                   resultsContainer = document.getElementById('results-container'), paginationControls = document.getElementById('pagination-controls'),
                   resultsCount = document.getElementById('results-count');
             
-            const API_BASE_URL = window.SNYF_API_URL || '', PAGE_SIZE = 12;
+            const runtimeParams = new URLSearchParams(window.location.search);
+            const API_BASE_URL = runtimeParams.get('api') || window.SNYF_API_URL || '', PAGE_SIZE = 12;
             let currentSearchMode = 'snyf', currentPage = 1, totalPages = 1, totalItems = 0, lastQuery = '';
 
             const updateToggleUI = () => {
@@ -172,7 +173,7 @@
 
             updateToggleUI(); 
 
-            const urlParams = new URLSearchParams(window.location.search); const queryFromURL = urlParams.get('query');
+            const queryFromURL = runtimeParams.get('query');
             if (queryFromURL) { searchInput.value = queryFromURL; performSearch(queryFromURL, 1); } else { fetchInitialCatalog(); }
         });
     </script>

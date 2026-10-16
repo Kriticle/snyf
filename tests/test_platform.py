@@ -212,7 +212,7 @@ prod_003,coll_a,Non HTTPS,dresses,http://cdn.example.com/p3.jpg,"[""occasion""]"
 
             self.assertEqual(customer.customer_id, signup["customer"]["customer_id"])
 
-    def test_customer_can_view_and_create_visible_api_keys_after_login(self) -> None:
+    def test_customer_sees_raw_api_keys_only_when_created(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = JsonStore(tmp)
             auth = self.auth_service(store)
@@ -222,11 +222,13 @@ prod_003,coll_a,Non HTTPS,dresses,http://cdn.example.com/p3.jpg,"[""occasion""]"
             api_keys = auth.list_api_keys(login["refresh_token"])
 
             self.assertEqual(len(api_keys), 1)
-            self.assertEqual(api_keys[0]["api_key"], signup["api_key"])
+            self.assertNotIn("api_key", api_keys[0])
+            self.assertNotIn(signup["api_key"], store.api_keys_path.read_text(encoding="utf-8"))
 
             new_key = auth.create_customer_api_key(login["refresh_token"])
 
             self.assertTrue(new_key["api_key"].startswith("fep_"))
+            self.assertNotIn(new_key["api_key"], store.api_keys_path.read_text(encoding="utf-8"))
             self.assertEqual(auth.authenticate_api_key(new_key["api_key"]).customer_id, signup["customer"]["customer_id"])
             self.assertEqual(len(auth.list_api_keys(login["refresh_token"])), 2)
             self.assertEqual(
@@ -470,6 +472,47 @@ prod_001,Linen Trouser,bottoms,https://cdn.example.com/p1.jpg,Cream linen wide l
             self.assertEqual(owner_status.json()["queued_rows"], 1)
             self.assertEqual(owner_status.json()["products"][0]["collection_id"], "coll_a")
             self.assertEqual(other_status.status_code, 404)
+
+    def test_failed_job_rows_can_be_safely_requeued(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            client = self.app_client(tmp)
+            signup = self.verified_client_signup(client, "retry@example.com")
+            store = JsonStore(tmp)
+            failed = ProductRecord(
+                customer_id=signup["customer"]["customer_id"],
+                collection_id="coll_a",
+                product_id="prod_001",
+                raw_metadata={"job_id": "job_retry", "name": "Retry Look"},
+                image_urls=["https://cdn.example.com/p1.jpg"],
+                attribute_schema=["style_mood"],
+                status=ProductStatus.FAILED,
+                version=3,
+                retry_count=1,
+                last_error_code="TimeoutError",
+                last_error_message="provider timed out",
+            )
+            store.upsert_record(failed)
+
+            response = client.post(
+                "/ingestion-jobs/job_retry/retry-failures",
+                headers={"x-api-key": signup["api_key"]},
+            )
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["requeued_rows"], 1)
+            retried = store.get_record("coll_a", "prod_001")
+            self.assertEqual(retried.status, ProductStatus.QUEUED)
+            self.assertEqual(retried.version, 4)
+            self.assertIsNone(retried.last_error_code)
+            messages = store.drain_queue()
+            self.assertEqual(len(messages), 1)
+            self.assertEqual(messages[0].version, 4)
+
+            second_response = client.post(
+                "/ingestion-jobs/job_retry/retry-failures",
+                headers={"x-api-key": signup["api_key"]},
+            )
+            self.assertEqual(second_response.json()["requeued_rows"], 0)
 
     def test_existing_collection_owner_is_preserved(self) -> None:
         csv_text = """product_id,collection_id,name,category,image_urls,attributes,description,price

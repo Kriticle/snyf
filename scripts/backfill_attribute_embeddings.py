@@ -15,17 +15,26 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Backfill product attribute embeddings for one or more collections.")
     parser.add_argument("collection_ids", nargs="+", help="Collection ids to backfill.")
     parser.add_argument("--data-dir", default="data", help="Local data dir. Ignored when AWS env vars are configured.")
+    parser.add_argument("--dry-run", action="store_true", help="Report eligible records without writing them.")
+    parser.add_argument("--force", action="store_true", help="Recompute records that already have attribute embeddings.")
     args = parser.parse_args()
 
     store = create_store(args.data_dir)
     embed_many = embed_many_fn()
     updated = 0
     skipped = 0
+    eligible = 0
 
     for collection_id in args.collection_ids:
         for record in store.records_for_collection(collection_id):
             if record.status != ProductStatus.ENRICHED:
                 skipped += 1
+                continue
+            if record.attribute_embeddings and not args.force:
+                skipped += 1
+                continue
+            eligible += 1
+            if args.dry_run:
                 continue
             attribute_embeddings = build_embeddings(embed_many, record)
             if not attribute_embeddings:
@@ -35,7 +44,12 @@ def main() -> None:
             store.upsert_index(record)
             updated += 1
 
-    print(json.dumps({"updated": updated, "skipped": skipped}, sort_keys=True))
+    print(
+        json.dumps(
+            {"dry_run": args.dry_run, "eligible": eligible, "updated": updated, "skipped": skipped},
+            sort_keys=True,
+        )
+    )
 
 
 def build_embeddings(embed_many, record: ProductRecord) -> dict[str, list[float]]:

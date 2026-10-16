@@ -361,7 +361,11 @@ def compute_feature_scores(
     embed_fn: EmbedFn,
 ) -> dict[str, float]:
     scores: dict[str, float] = {
-        "_retrieval_semantic": normalize_cosine(cosine_similarity(query_vector, document.get("embedding", []))),
+        "_retrieval_semantic": (
+            float(document["_retrieval_score"])
+            if "_retrieval_score" in document
+            else normalize_cosine(cosine_similarity(query_vector, document.get("embedding", [])))
+        ),
         "_weight_total": 0.0,
     }
     document_attrs = document.get("attrs", {})

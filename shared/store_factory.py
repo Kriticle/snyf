@@ -13,6 +13,8 @@ def create_store(data_dir: str = "data"):
         "SESSIONS_TABLE_NAME",
         "API_KEYS_TABLE_NAME",
         "USAGE_TABLE_NAME",
+        "JOB_ERRORS_TABLE_NAME",
+        "RATE_LIMITS_TABLE_NAME",
         "PRODUCT_QUEUE_URL",
     ]
     if all(os.getenv(name) for name in required):
@@ -26,6 +28,8 @@ def create_store(data_dir: str = "data"):
             api_keys_table_name=os.environ["API_KEYS_TABLE_NAME"],
             usage_table_name=os.environ["USAGE_TABLE_NAME"],
             product_queue_url=os.environ["PRODUCT_QUEUE_URL"],
+            job_errors_table_name=os.environ["JOB_ERRORS_TABLE_NAME"],
+            rate_limits_table_name=os.environ["RATE_LIMITS_TABLE_NAME"],
             opensearch_endpoint=os.getenv("OPENSEARCH_ENDPOINT"),
             opensearch_index=os.getenv("DEFAULT_VECTOR_INDEX"),
         )

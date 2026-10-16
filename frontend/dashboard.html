@@ -200,7 +200,9 @@
         let g_session = JSON.parse(localStorage.getItem('snyfSession') || 'null');
         let g_customer = JSON.parse(localStorage.getItem('snyfCustomer') || 'null');
         let g_refreshToken = localStorage.getItem('snyfRefreshToken');
-        let g_apiKey = localStorage.getItem('snyfApiKey');
+        let g_apiKey = sessionStorage.getItem('snyfOneTimeApiKey');
+        sessionStorage.removeItem('snyfOneTimeApiKey');
+        localStorage.removeItem('snyfApiKey');
         let g_collectionId = localStorage.getItem('snyfCollectionId');
         let g_collectionConfig = null;
 
@@ -233,6 +235,9 @@
             Object.keys(localStorage)
                 .filter((key) => key.startsWith('snyf'))
                 .forEach((key) => localStorage.removeItem(key));
+            Object.keys(sessionStorage)
+                .filter((key) => key.startsWith('snyf'))
+                .forEach((key) => sessionStorage.removeItem(key));
             window.location.href = 'login.html';
         };
 
@@ -263,7 +268,7 @@
 
         const updateKeyDisplay = () => {
             if (!g_apiKey) {
-                apiKeyDisplay.textContent = 'No API key generated yet.';
+                apiKeyDisplay.textContent = 'Generate a key to display it once.';
                 apiKeyDisplay.classList.add('text-gray-500');
                 apiKeyDisplay.classList.remove('text-primary');
                 toggleKeyBtn.style.display = 'none';
@@ -384,11 +389,9 @@
                 throw new Error(data.detail || data.message || 'Could not load API keys.');
             }
 
-            const activeKey = (data.api_keys || []).find((key) => key.status === 'ACTIVE' && key.api_key);
-            if (activeKey) {
-                g_apiKey = activeKey.api_key;
-                localStorage.setItem('snyfApiKey', g_apiKey);
-                updateKeyDisplay();
+            const hasActiveKey = (data.api_keys || []).some((key) => key.status === 'ACTIVE');
+            if (hasActiveKey && !g_apiKey) {
+                showStatus('An active key exists, but raw keys are shown only once. Generate a replacement if needed.', 'info');
             }
         };
 
@@ -410,12 +413,11 @@
                 }
 
                 g_apiKey = data.api_key;
-                localStorage.setItem('snyfApiKey', g_apiKey);
                 isKeyVisible = true;
                 updateKeyDisplay();
                 window.snyfAnalytics?.capture('api_key_generated');
                 await refreshCollectionConfig().catch((error) => showStatus(error.message, 'error'));
-                showStatus('New API key generated.', 'success');
+                showStatus('New API key generated. Copy it now; it will not be shown again.', 'success');
             } catch (error) {
                 showStatus(error.message, 'error');
             } finally {

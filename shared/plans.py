@@ -48,6 +48,27 @@ class UsageService:
         plan = customer.plan.upper()
         limits = PLAN_LIMITS.get(plan, PLAN_LIMITS["FREE"])
         limit = limits[limit_name]
+        if amount < 1:
+            raise ValueError("Usage reservation amount must be positive.")
+        if amount > limit:
+            raise PlanLimitError(
+                f"{limit_name} exceeded for {plan} plan. Please upgrade your plan.",
+                plan=plan,
+                limit_name=limit_name,
+                limit=limit,
+            )
+        reserve = getattr(self.store, "reserve_usage", None)
+        if reserve:
+            counter = reserve(customer.customer_id, current_period(), field, amount, limit)
+            if counter is not None:
+                return counter
+            raise PlanLimitError(
+                f"{limit_name} exceeded for {plan} plan. Please upgrade your plan.",
+                plan=plan,
+                limit_name=limit_name,
+                limit=limit,
+            )
+
         counter = self.store.get_usage_counter(customer.customer_id, current_period())
         current = getattr(counter, field)
         if current + amount > limit:

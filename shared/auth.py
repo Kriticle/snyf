@@ -199,7 +199,6 @@ class AuthService:
             customer_id=customer_id,
             api_key_hash=sha256(raw_api_key),
             status="ACTIVE",
-            api_key_value=raw_api_key,
         )
         self.store.upsert_api_key(api_key)
         return api_key, raw_api_key
@@ -331,7 +330,6 @@ def public_session(session: Session) -> dict:
 def public_api_key(api_key: ApiKey) -> dict:
     return {
         "api_key_id": api_key.api_key_id,
-        "api_key": api_key.api_key_value,
         "status": api_key.status,
         "created_at": api_key.created_at,
         "last_used_at": api_key.last_used_at,

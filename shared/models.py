@@ -19,6 +19,10 @@ class ProductStatus(str, Enum):
     DELETED = "DELETED"
 
 
+class StaleProductVersionError(RuntimeError):
+    """Raised when an older queue message attempts to overwrite newer product state."""
+
+
 @dataclass(frozen=True)
 class CsvIssue:
     row_number: int
@@ -60,6 +64,10 @@ class ProductRecord:
     brand: str | None = None
     status: ProductStatus = ProductStatus.QUEUED
     version: int = 0
+    retry_count: int = 0
+    last_error_code: str | None = None
+    last_error_message: str | None = None
+    last_error_at: str | None = None
     created_at: str = field(default_factory=lambda: utc_now())
     updated_at: str = field(default_factory=lambda: utc_now())
 
@@ -109,7 +117,6 @@ class ApiKey:
     customer_id: str
     api_key_hash: str
     status: str
-    api_key_value: str | None = None
     created_at: str = field(default_factory=lambda: utc_now())
     last_used_at: str | None = None
 

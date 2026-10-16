@@ -49,6 +49,14 @@ resource "aws_ecs_service" "this" {
   desired_count   = var.desired_count
   launch_type     = "FARGATE"
 
+  deployment_circuit_breaker {
+    enable   = true
+    rollback = true
+  }
+
+  deployment_minimum_healthy_percent = 100
+  deployment_maximum_percent         = 200
+
   dynamic "load_balancer" {
     for_each = var.target_group_arn == null ? [] : [var.target_group_arn]
     content {

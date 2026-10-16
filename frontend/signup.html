@@ -100,7 +100,7 @@
                 localStorage.setItem('snyfCustomer', JSON.stringify(data.customer));
                 localStorage.setItem('snyfSession', JSON.stringify(data.session));
                 localStorage.setItem('snyfRefreshToken', data.refresh_token);
-                localStorage.setItem('snyfApiKey', data.api_key);
+                sessionStorage.setItem('snyfOneTimeApiKey', data.api_key);
                 localStorage.setItem('snyfCompanyName', companyInput.value.trim() || localStorage.getItem('snyfCompanyName') || '');
             }
 

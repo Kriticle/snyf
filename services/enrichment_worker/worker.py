@@ -13,7 +13,7 @@ from functions.providers import embed_many_fn as default_embed_many_fn
 from functions.providers import enrich_fn as default_enrich_fn
 from functions.providers import provider_name
 from shared.attribute_embeddings import build_attribute_embedding_inputs
-from shared.models import IngestionMessage, Operation, ProductRecord, ProductStatus, utc_now
+from shared.models import IngestionMessage, Operation, ProductRecord, ProductStatus, StaleProductVersionError, utc_now
 from shared.storage import JsonStore
 from shared.store_factory import create_store
 
@@ -42,14 +42,18 @@ class EnrichmentWorker:
             self.embed_many_fn = default_embed_many_fn()
 
     async def process_message(self, message: IngestionMessage) -> ProductRecord | None:
+        effective_version = max(message.version, 1)
         if message.operation == Operation.DELETE:
-            self.store.delete_record(message.collection_id, message.product_id)
+            self.store.delete_record(message.collection_id, message.product_id, version=effective_version)
             return None
 
         validate_image_urls(message.image_urls)
 
         existing = self.store.get_record(message.collection_id, message.product_id)
-        version = (existing.version + 1) if existing else 1
+        if existing and existing.version > effective_version:
+            raise StaleProductVersionError(
+                f"Skipping stale message version {effective_version}; stored version is {existing.version}."
+            )
         record = ProductRecord(
             customer_id=message.customer_id,
             collection_id=message.collection_id,
@@ -63,11 +67,12 @@ class EnrichmentWorker:
             currency=message.metadata.get("currency"),
             brand=message.metadata.get("brand"),
             status=ProductStatus.ENRICHING,
-            version=version,
+            version=effective_version,
         )
         self.store.upsert_record(record)
 
         try:
+            self._extend_visibility(message)
             image_bytes = await self._download_images(message.image_urls)
             validate_image_bytes(image_bytes, expected_count=len(message.image_urls))
             llm_response = await maybe_await(self.enrich_fn(
@@ -79,6 +84,7 @@ class EnrichmentWorker:
             attrs = parse_enrichment_response(llm_response, message.attribute_schema)
             validate_enriched_attrs(attrs)
             text = enriched_text(message.metadata, attrs)
+            self._extend_visibility(message)
             embedding = await maybe_await(self.embed_fn(text))
             validate_embedding(embedding)
             attribute_embeddings = await self._embed_attributes(attrs)
@@ -91,10 +97,17 @@ class EnrichmentWorker:
             self.store.upsert_record(record)
             self.store.upsert_index(record)
             return record
-        except Exception:
+        except StaleProductVersionError:
+            raise
+        except Exception as exc:
             record.status = ProductStatus.FAILED
+            record.retry_count = self._receive_count(message)
+            record.last_error_code = type(exc).__name__
+            record.last_error_message = str(exc)[:500]
+            record.last_error_at = utc_now()
             record.updated_at = utc_now()
             self.store.upsert_record(record)
+            self._record_failure(message, record, exc)
             raise
 
     async def drain_once(self) -> list[ProductRecord]:
@@ -102,6 +115,16 @@ class EnrichmentWorker:
         for message in self.store.drain_queue():
             try:
                 record = await self.process_message(message)
+            except StaleProductVersionError as exc:
+                logger.info(
+                    "Acknowledging stale product message collection=%s product=%s version=%s reason=%s",
+                    message.collection_id,
+                    message.product_id,
+                    message.version,
+                    exc,
+                )
+                self._ack_message(message)
+                continue
             except Exception:
                 logger.exception(
                     "Failed to process product %s in collection %s",
@@ -118,6 +141,20 @@ class EnrichmentWorker:
         ack = getattr(self.store, "ack_message", None)
         if ack:
             ack(message)
+
+    def _extend_visibility(self, message: IngestionMessage) -> None:
+        extend = getattr(self.store, "extend_message_visibility", None)
+        if extend:
+            extend(message, int(os.getenv("WORKER_VISIBILITY_EXTENSION_SECONDS", "300")))
+
+    def _receive_count(self, message: IngestionMessage) -> int:
+        receive_count = getattr(self.store, "message_receive_count", None)
+        return receive_count(message) if receive_count else 1
+
+    def _record_failure(self, message: IngestionMessage, record: ProductRecord, exc: Exception) -> None:
+        record_failure = getattr(self.store, "record_job_error", None)
+        if record_failure:
+            record_failure(message, record, exc)
 
     async def _download_images(self, image_urls: list[str]) -> list[bytes]:
         if provider_name() != "openai":

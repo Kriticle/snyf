@@ -300,7 +300,7 @@
 
             const demoContainer = document.getElementById('demo');
             if(demoContainer) {
-                const SNYF_API_URL = window.SNYF_API_URL || '';
+                const SNYF_API_URL = new URLSearchParams(window.location.search).get('api') || window.SNYF_API_URL || '';
                 
                 const snyfBtn = document.getElementById('snyf-search-btn'), 
                       normalBtn = document.getElementById('normal-search-btn'),

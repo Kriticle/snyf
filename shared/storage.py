@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import json
+import threading
 from dataclasses import asdict
 from pathlib import Path
 from typing import Iterable
 
-from shared.models import ApiKey, CollectionConfig, Customer, IngestionMessage, Operation, ProductRecord, ProductStatus, Session, UsageCounter
+from shared.models import ApiKey, CollectionConfig, Customer, IngestionMessage, Operation, ProductRecord, ProductStatus, Session, StaleProductVersionError, UsageCounter, utc_now
 
 
 class JsonStore:
@@ -27,6 +28,9 @@ class JsonStore:
         self.sessions_path = self.root / "sessions.json"
         self.api_keys_path = self.root / "api_keys.json"
         self.usage_path = self.root / "usage_counters.json"
+        self.job_errors_path = self.root / "job_errors.json"
+        self._usage_lock = threading.Lock()
+        self._record_lock = threading.Lock()
 
     def enqueue(self, message: IngestionMessage) -> None:
         payload = asdict(message)
@@ -44,22 +48,60 @@ class JsonStore:
     def ack_message(self, message: IngestionMessage) -> None:
         return None
 
+    def extend_message_visibility(self, message: IngestionMessage, timeout_seconds: int) -> None:
+        return None
+
+    def message_receive_count(self, message: IngestionMessage) -> int:
+        return 1
+
+    def record_job_error(self, message: IngestionMessage, record: ProductRecord, exc: Exception) -> None:
+        errors = self._job_errors()
+        job_id = str(message.metadata.get("job_id", "unknown"))
+        error = {
+            "job_id": job_id,
+            "error_id": f"{message.product_id}#v{message.version}#attempt1",
+            "customer_id": message.customer_id,
+            "collection_id": message.collection_id,
+            "product_id": message.product_id,
+            "product_version": message.version,
+            "attempt": 1,
+            "error_code": type(exc).__name__,
+            "error_message": str(exc)[:500],
+            "created_at": utc_now(),
+        }
+        errors.setdefault(job_id, {})[error["error_id"]] = error
+        self.job_errors_path.write_text(json.dumps(errors, indent=2, sort_keys=True), encoding="utf-8")
+
+    def job_errors_for_job(self, job_id: str) -> list[dict]:
+        return list(self._job_errors().get(job_id, {}).values())
+
     def get_record(self, collection_id: str, product_id: str) -> ProductRecord | None:
         return self._records().get(self._key(collection_id, product_id))
 
     def upsert_record(self, record: ProductRecord) -> None:
         records = self._records()
+        existing = records.get(record.document_id)
+        if existing and existing.version > record.version:
+            raise StaleProductVersionError(
+                f"Product {record.document_id} is already at version {existing.version}."
+            )
         records[record.document_id] = record
         self._write_records(records)
 
-    def delete_record(self, collection_id: str, product_id: str) -> None:
+    def delete_record(self, collection_id: str, product_id: str, version: int | None = None) -> None:
         key = self._key(collection_id, product_id)
         records = self._records()
         existing = records.get(key)
         if existing:
+            if version is not None and existing.version > version:
+                raise StaleProductVersionError(
+                    f"Product {key} is already at version {existing.version}."
+                )
             existing.status = ProductStatus.DELETED
             existing.embedding = []
             existing.enriched_text = ""
+            if version is not None:
+                existing.version = version
             records[key] = existing
             self._write_records(records)
         index = self._index()
@@ -67,6 +109,11 @@ class JsonStore:
         self._write_index(index)
 
     def upsert_index(self, record: ProductRecord) -> None:
+        existing = self._records().get(record.document_id)
+        if existing and existing.version > record.version:
+            raise StaleProductVersionError(
+                f"Product {record.document_id} is already at version {existing.version}."
+            )
         index = self._index()
         index[record.document_id] = {
             "collection_id": record.collection_id,
@@ -97,6 +144,22 @@ class JsonStore:
             for record in self._records().values()
             if record.raw_metadata.get("job_id") == job_id
         ]
+
+    def prepare_retry(self, record: ProductRecord) -> ProductRecord | None:
+        with self._record_lock:
+            records = self._records()
+            current = records.get(record.document_id)
+            if current is None or current.status != ProductStatus.FAILED or current.version != record.version:
+                return None
+            current.version += 1
+            current.status = ProductStatus.QUEUED
+            current.last_error_code = None
+            current.last_error_message = None
+            current.last_error_at = None
+            current.updated_at = utc_now()
+            records[current.document_id] = current
+            self._write_records(records)
+            return current
 
     def indexed_documents(self, collection_id: str) -> list[dict]:
         return [
@@ -182,6 +245,24 @@ class JsonStore:
             encoding="utf-8",
         )
 
+    def reserve_usage(
+        self,
+        customer_id: str,
+        period: str,
+        metric: str,
+        amount: int,
+        limit: int,
+    ) -> UsageCounter | None:
+        with self._usage_lock:
+            counter = self.get_usage_counter(customer_id, period)
+            current = getattr(counter, metric)
+            if current + amount > limit:
+                return None
+            setattr(counter, metric, current + amount)
+            counter.updated_at = utc_now()
+            self.upsert_usage_counter(counter)
+            return counter
+
     def _records(self) -> dict[str, ProductRecord]:
         if not self.records_path.exists():
             return {}
@@ -215,13 +296,28 @@ class JsonStore:
         if not self.api_keys_path.exists():
             return {}
         data = json.loads(self.api_keys_path.read_text(encoding="utf-8") or "{}")
-        return {key: ApiKey(**value) for key, value in data.items()}
+        api_keys = {}
+        had_legacy_values = False
+        for key, value in data.items():
+            had_legacy_values = value.pop("api_key_value", None) is not None or had_legacy_values
+            api_keys[key] = ApiKey(**value)
+        if had_legacy_values:
+            self.api_keys_path.write_text(
+                json.dumps({key: asdict(value) for key, value in api_keys.items()}, indent=2, sort_keys=True),
+                encoding="utf-8",
+            )
+        return api_keys
 
     def _usage_counters(self) -> dict[str, UsageCounter]:
         if not self.usage_path.exists():
             return {}
         data = json.loads(self.usage_path.read_text(encoding="utf-8") or "{}")
         return {key: UsageCounter(**value) for key, value in data.items()}
+
+    def _job_errors(self) -> dict[str, dict[str, dict]]:
+        if not self.job_errors_path.exists():
+            return {}
+        return json.loads(self.job_errors_path.read_text(encoding="utf-8") or "{}")
 
     def _write_records(self, records: dict[str, ProductRecord]) -> None:
         payload = {}

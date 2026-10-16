@@ -8,6 +8,7 @@ from typing import Any, Iterable
 
 import boto3
 from boto3.dynamodb.conditions import Key
+from botocore.exceptions import ClientError
 
 from shared.models import (
     ApiKey,
@@ -18,7 +19,9 @@ from shared.models import (
     ProductRecord,
     ProductStatus,
     Session,
+    StaleProductVersionError,
     UsageCounter,
+    utc_now,
 )
 
 
@@ -34,6 +37,8 @@ class AwsStore:
         api_keys_table_name: str,
         usage_table_name: str,
         product_queue_url: str,
+        job_errors_table_name: str | None = None,
+        rate_limits_table_name: str | None = None,
         opensearch_endpoint: str | None = None,
         opensearch_index: str | None = None,
     ) -> None:
@@ -44,9 +49,12 @@ class AwsStore:
         self.sessions = dynamodb.Table(sessions_table_name)
         self.api_keys = dynamodb.Table(api_keys_table_name)
         self.usage = dynamodb.Table(usage_table_name)
+        self.job_errors = dynamodb.Table(job_errors_table_name) if job_errors_table_name else None
+        self.rate_limits = dynamodb.Table(rate_limits_table_name) if rate_limits_table_name else None
         self.sqs = boto3.client("sqs")
         self.product_queue_url = product_queue_url
         self._receipt_handles: dict[tuple[str, str, int, str], str] = {}
+        self._receive_counts: dict[tuple[str, str, int, str], int] = {}
         self.search = create_opensearch_client(opensearch_endpoint)
         self.search_index = opensearch_index
         if self.search and self.search_index:
@@ -62,21 +70,87 @@ class AwsStore:
             QueueUrl=self.product_queue_url,
             MaxNumberOfMessages=10,
             WaitTimeSeconds=5,
+            AttributeNames=["ApproximateReceiveCount"],
         )
         messages = []
         for raw in response.get("Messages", []):
             message = self._message_from_dict(json.loads(raw["Body"]))
-            self._receipt_handles[message_key(message)] = raw["ReceiptHandle"]
+            key = message_key(message)
+            self._receipt_handles[key] = raw["ReceiptHandle"]
+            self._receive_counts[key] = int(raw.get("Attributes", {}).get("ApproximateReceiveCount", "1"))
             messages.append(message)
         return messages
 
     def ack_message(self, message: IngestionMessage) -> None:
-        receipt_handle = self._receipt_handles.pop(message_key(message), None)
+        key = message_key(message)
+        receipt_handle = self._receipt_handles.pop(key, None)
+        self._receive_counts.pop(key, None)
         if receipt_handle:
             self.sqs.delete_message(
                 QueueUrl=self.product_queue_url,
                 ReceiptHandle=receipt_handle,
             )
+
+    def extend_message_visibility(self, message: IngestionMessage, timeout_seconds: int) -> None:
+        receipt_handle = self._receipt_handles.get(message_key(message))
+        if receipt_handle:
+            self.sqs.change_message_visibility(
+                QueueUrl=self.product_queue_url,
+                ReceiptHandle=receipt_handle,
+                VisibilityTimeout=max(0, min(timeout_seconds, 43200)),
+            )
+
+    def message_receive_count(self, message: IngestionMessage) -> int:
+        return self._receive_counts.get(message_key(message), 1)
+
+    def record_job_error(self, message: IngestionMessage, record: ProductRecord, exc: Exception) -> None:
+        if self.job_errors is None:
+            return
+        attempt = self.message_receive_count(message)
+        self.job_errors.put_item(
+            Item=to_dynamo_item(
+                {
+                    "job_id": message.metadata.get("job_id", "unknown"),
+                    "error_id": f"{message.product_id}#v{message.version}#attempt{attempt}",
+                    "customer_id": message.customer_id,
+                    "collection_id": message.collection_id,
+                    "product_id": message.product_id,
+                    "product_version": message.version,
+                    "attempt": attempt,
+                    "error_code": type(exc).__name__,
+                    "error_message": str(exc)[:500],
+                    "created_at": utc_now(),
+                }
+            )
+        )
+
+    def job_errors_for_job(self, job_id: str) -> list[dict[str, Any]]:
+        if self.job_errors is None:
+            return []
+        items = []
+        kwargs = {"KeyConditionExpression": Key("job_id").eq(job_id)}
+        while True:
+            response = self.job_errors.query(**kwargs)
+            items.extend(from_dynamo_item(item) for item in response.get("Items", []))
+            if "LastEvaluatedKey" not in response:
+                return items
+            kwargs["ExclusiveStartKey"] = response["LastEvaluatedKey"]
+
+    def reserve_demo_request(self, client_id: str, window_start: int, limit: int, ttl: int) -> bool:
+        if self.rate_limits is None:
+            return False
+        try:
+            self.rate_limits.update_item(
+                Key={"rate_limit_key": f"{client_id}#{window_start}"},
+                UpdateExpression="SET expires_at = :expires_at ADD request_count :one",
+                ConditionExpression="attribute_not_exists(request_count) OR request_count < :limit",
+                ExpressionAttributeValues={":expires_at": ttl, ":one": 1, ":limit": limit},
+            )
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+                return False
+            raise
+        return True
 
     def get_record(self, collection_id: str, product_id: str) -> ProductRecord | None:
         response = self.products.get_item(Key={"collection_id": collection_id, "product_id": product_id})
@@ -87,17 +161,42 @@ class AwsStore:
         item = asdict(record)
         item["status"] = record.status.value
         item["job_id"] = record.raw_metadata.get("job_id", "unknown")
-        self.products.put_item(Item=to_dynamo_item(item))
+        try:
+            self.products.put_item(
+                Item=to_dynamo_item(item),
+                ConditionExpression="attribute_not_exists(#version) OR #version <= :incoming_version",
+                ExpressionAttributeNames={"#version": "version"},
+                ExpressionAttributeValues={":incoming_version": record.version},
+            )
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+                raise StaleProductVersionError(
+                    f"Product {record.document_id} has a newer stored version."
+                ) from exc
+            raise
 
-    def delete_record(self, collection_id: str, product_id: str) -> None:
+    def delete_record(self, collection_id: str, product_id: str, version: int | None = None) -> None:
         existing = self.get_record(collection_id, product_id)
         if existing:
+            if version is not None and existing.version > version:
+                raise StaleProductVersionError(
+                    f"Product {collection_id}#{product_id} is already at version {existing.version}."
+                )
             existing.status = ProductStatus.DELETED
             existing.embedding = []
             existing.enriched_text = ""
+            if version is not None:
+                existing.version = version
             self.upsert_record(existing)
         if self.search and self.search_index:
-            self.search.delete(index=self.search_index, id=self._document_id(collection_id, product_id), ignore=[404])
+            kwargs = {
+                "index": self.search_index,
+                "id": self._document_id(collection_id, product_id),
+                "ignore": [404, 409],
+            }
+            if version is not None:
+                kwargs.update({"version": version, "version_type": "external_gte"})
+            self.search.delete(**kwargs)
 
     def upsert_index(self, record: ProductRecord) -> None:
         self.upsert_record(record)
@@ -106,33 +205,79 @@ class AwsStore:
                 index=self.search_index,
                 id=record.document_id,
                 body=self._record_to_document(record),
+                version=record.version,
+                version_type="external_gte",
                 refresh=False,
             )
 
     def records_for_collection(self, collection_id: str) -> Iterable[ProductRecord]:
-        response = self.products.query(KeyConditionExpression=Key("collection_id").eq(collection_id))
-        for item in response.get("Items", []):
-            record = self._record_from_dict(item)
-            if record.status != ProductStatus.DELETED:
-                yield record
+        kwargs = {"KeyConditionExpression": Key("collection_id").eq(collection_id)}
+        while True:
+            response = self.products.query(**kwargs)
+            for item in response.get("Items", []):
+                record = self._record_from_dict(item)
+                if record.status != ProductStatus.DELETED:
+                    yield record
+            if "LastEvaluatedKey" not in response:
+                break
+            kwargs["ExclusiveStartKey"] = response["LastEvaluatedKey"]
 
     def records_for_job(self, job_id: str) -> list[ProductRecord]:
-        response = self.products.query(
-            IndexName="job-products",
-            KeyConditionExpression=Key("job_id").eq(job_id),
-        )
-        return [self._record_from_dict(item) for item in response.get("Items", [])]
+        records = []
+        kwargs = {
+            "IndexName": "job-products",
+            "KeyConditionExpression": Key("job_id").eq(job_id),
+        }
+        while True:
+            response = self.products.query(**kwargs)
+            records.extend(self._record_from_dict(item) for item in response.get("Items", []))
+            if "LastEvaluatedKey" not in response:
+                return records
+            kwargs["ExclusiveStartKey"] = response["LastEvaluatedKey"]
+
+    def prepare_retry(self, record: ProductRecord) -> ProductRecord | None:
+        try:
+            response = self.products.update_item(
+                Key={"collection_id": record.collection_id, "product_id": record.product_id},
+                UpdateExpression=(
+                    "SET #version = :next_version, #status = :queued, updated_at = :updated_at "
+                    "REMOVE last_error_code, last_error_message, last_error_at"
+                ),
+                ConditionExpression="#version = :current_version AND #status = :failed",
+                ExpressionAttributeNames={"#version": "version", "#status": "status"},
+                ExpressionAttributeValues={
+                    ":next_version": record.version + 1,
+                    ":current_version": record.version,
+                    ":queued": ProductStatus.QUEUED.value,
+                    ":failed": ProductStatus.FAILED.value,
+                    ":updated_at": utc_now(),
+                },
+                ReturnValues="ALL_NEW",
+            )
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+                return None
+            raise
+        return self._record_from_dict(response["Attributes"])
 
     def indexed_documents(self, collection_id: str) -> list[dict[str, Any]]:
         if self.search and self.search_index:
-            response = self.search.search(
-                index=self.search_index,
-                body={
-                    "size": 10000,
+            documents = []
+            search_after = None
+            while True:
+                body = {
+                    "size": 500,
                     "query": {"term": {"collection_id": collection_id}},
-                },
-            )
-            return [hit["_source"] for hit in response.get("hits", {}).get("hits", [])]
+                    "sort": [{"product_id": "asc"}],
+                }
+                if search_after is not None:
+                    body["search_after"] = search_after
+                response = self.search.search(index=self.search_index, body=body)
+                hits = response.get("hits", {}).get("hits", [])
+                documents.extend(hit["_source"] for hit in hits)
+                if len(hits) < body["size"]:
+                    return documents
+                search_after = hits[-1]["sort"]
 
         documents = []
         for record in self.records_for_collection(collection_id):
@@ -143,9 +288,7 @@ class AwsStore:
 
     def vector_search_documents(self, collection_id: str, query_vector: list[float], limit: int) -> list[dict[str, Any]]:
         if not self.search or not self.search_index:
-            documents = self.indexed_documents(collection_id)
-            documents.sort(key=lambda document: dot_product(query_vector, document.get("embedding", [])), reverse=True)
-            return documents[:limit]
+            raise RuntimeError("OpenSearch is required for vector retrieval in the AWS store.")
         response = self.search.search(
             index=self.search_index,
             body={
@@ -165,7 +308,12 @@ class AwsStore:
                 },
             },
         )
-        return [hit["_source"] for hit in response.get("hits", {}).get("hits", [])]
+        documents = []
+        for hit in response.get("hits", {}).get("hits", []):
+            document = dict(hit["_source"])
+            document["_retrieval_score"] = float(hit.get("_score", 0.0))
+            documents.append(document)
+        return documents
 
     def keyword_search_documents(self, collection_id: str, query: str, limit: int) -> list[dict[str, Any]]:
         if not self.search or not self.search_index:
@@ -243,14 +391,33 @@ class AwsStore:
             Limit=1,
         )
         items = response.get("Items", [])
-        return ApiKey(**from_dynamo_item(items[0])) if items else None
+        if items:
+            self._remove_legacy_api_key_value(items[0])
+        return api_key_from_item(items[0]) if items else None
 
     def api_keys_for_customer(self, customer_id: str) -> list[ApiKey]:
-        response = self.api_keys.query(
-            IndexName="customer-api-keys",
-            KeyConditionExpression=Key("customer_id").eq(customer_id),
+        items = []
+        kwargs = {
+            "IndexName": "customer-api-keys",
+            "KeyConditionExpression": Key("customer_id").eq(customer_id),
+        }
+        while True:
+            response = self.api_keys.query(**kwargs)
+            items.extend(response.get("Items", []))
+            if "LastEvaluatedKey" not in response:
+                break
+            kwargs["ExclusiveStartKey"] = response["LastEvaluatedKey"]
+        for item in items:
+            self._remove_legacy_api_key_value(item)
+        return [api_key_from_item(item) for item in items]
+
+    def _remove_legacy_api_key_value(self, item: dict[str, Any]) -> None:
+        if "api_key_value" not in item:
+            return
+        self.api_keys.update_item(
+            Key={"api_key_id": item["api_key_id"]},
+            UpdateExpression="REMOVE api_key_value",
         )
-        return [ApiKey(**from_dynamo_item(item)) for item in response.get("Items", [])]
 
     def get_usage_counter(self, customer_id: str, period: str) -> UsageCounter:
         usage_key = f"{customer_id}#{period}"
@@ -262,6 +429,44 @@ class AwsStore:
 
     def upsert_usage_counter(self, counter: UsageCounter) -> None:
         self.usage.put_item(Item=to_dynamo_item(asdict(counter)))
+
+    def reserve_usage(
+        self,
+        customer_id: str,
+        period: str,
+        metric: str,
+        amount: int,
+        limit: int,
+    ) -> UsageCounter | None:
+        if metric not in {"search_requests", "ingestion_rows"}:
+            raise ValueError(f"Unsupported usage metric: {metric}")
+        usage_key = f"{customer_id}#{period}"
+        try:
+            response = self.usage.update_item(
+                Key={"usage_key": usage_key},
+                UpdateExpression=(
+                    "SET customer_id = if_not_exists(customer_id, :customer_id), "
+                    "#period = if_not_exists(#period, :period), updated_at = :updated_at "
+                    "ADD #metric :amount"
+                ),
+                ConditionExpression="attribute_not_exists(#metric) OR #metric <= :max_before",
+                ExpressionAttributeNames={"#metric": metric, "#period": "period"},
+                ExpressionAttributeValues=to_dynamo_item(
+                    {
+                        ":customer_id": customer_id,
+                        ":period": period,
+                        ":updated_at": utc_now(),
+                        ":amount": amount,
+                        ":max_before": limit - amount,
+                    }
+                ),
+                ReturnValues="ALL_NEW",
+            )
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+                return None
+            raise
+        return UsageCounter(**from_dynamo_item(response["Attributes"]))
 
     def _record_from_dict(self, data: dict[str, Any]) -> ProductRecord:
         item = from_dynamo_item(data)
@@ -316,6 +521,12 @@ def from_dynamo_item(value: Any) -> Any:
     return value
 
 
+def api_key_from_item(item: dict[str, Any]) -> ApiKey:
+    value = from_dynamo_item(item)
+    value.pop("api_key_value", None)
+    return ApiKey(**value)
+
+
 def message_key(message: IngestionMessage) -> tuple[str, str, int, str]:
     return (message.collection_id, message.product_id, message.version, message.operation.value)
 
@@ -343,7 +554,6 @@ def create_opensearch_client(endpoint: str | None):
         max_retries=2,
         retry_on_timeout=True,
     )
-
 
 def ensure_index(client, index_name: str) -> None:
     if client.indices.exists(index=index_name):
@@ -386,7 +596,3 @@ def ensure_index(client, index_name: str) -> None:
             }
         },
     )
-
-
-def dot_product(left: list[float], right: list[float]) -> float:
-    return sum(a * b for a, b in zip(left, right))

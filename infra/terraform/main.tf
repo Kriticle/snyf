@@ -1,11 +1,14 @@
 locals {
-  name = "${var.project}-${var.environment}"
+  name          = "${var.project}-${var.environment}"
+  alarm_actions = var.alarm_topic_arn == "" ? [] : [var.alarm_topic_arn]
   tags = {
     Project     = var.project
     Environment = var.environment
     ManagedBy   = "terraform"
   }
 }
+
+data "aws_caller_identity" "current" {}
 
 resource "aws_s3_bucket" "uploads" {
   bucket_prefix = "${local.name}-uploads-"
@@ -271,6 +274,33 @@ resource "aws_dynamodb_table" "usage_counters" {
     name            = "customer-usage"
     hash_key        = "customer_id"
     projection_type = "ALL"
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  tags = local.tags
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+resource "aws_dynamodb_table" "rate_limits" {
+  name                        = "${local.name}-rate-limits"
+  billing_mode                = "PAY_PER_REQUEST"
+  hash_key                    = "rate_limit_key"
+  deletion_protection_enabled = true
+
+  attribute {
+    name = "rate_limit_key"
+    type = "S"
+  }
+
+  ttl {
+    attribute_name = "expires_at"
+    enabled        = true
   }
 
   point_in_time_recovery {
@@ -690,6 +720,7 @@ resource "aws_iam_role_policy" "app_access" {
           "${aws_dynamodb_table.api_keys.arn}/index/*",
           aws_dynamodb_table.usage_counters.arn,
           "${aws_dynamodb_table.usage_counters.arn}/index/*",
+          aws_dynamodb_table.rate_limits.arn,
           aws_dynamodb_table.search_cache.arn,
           aws_dynamodb_table.ingestion_jobs.arn,
           "${aws_dynamodb_table.ingestion_jobs.arn}/index/*",
@@ -702,6 +733,7 @@ resource "aws_iam_role_policy" "app_access" {
           "sqs:SendMessage",
           "sqs:ReceiveMessage",
           "sqs:DeleteMessage",
+          "sqs:ChangeMessageVisibility",
           "sqs:GetQueueAttributes"
         ]
         Resource = [
@@ -781,7 +813,7 @@ module "ingestion_api" {
   cluster_arn        = aws_ecs_cluster.main.arn
   execution_role_arn = aws_iam_role.ecs_task_execution.arn
   task_role_arn      = aws_iam_role.app_task.arn
-  image              = "${aws_ecr_repository.ingestion_api.repository_url}:latest"
+  image              = "${aws_ecr_repository.ingestion_api.repository_url}@${var.image_digests.ingestion_api}"
   container_port     = var.container_port
   private_subnet_ids = var.private_subnet_ids
   security_group_ids = [aws_security_group.service.id]
@@ -799,7 +831,7 @@ module "search_api" {
   cluster_arn        = aws_ecs_cluster.main.arn
   execution_role_arn = aws_iam_role.ecs_task_execution.arn
   task_role_arn      = aws_iam_role.app_task.arn
-  image              = "${aws_ecr_repository.search_api.repository_url}:latest"
+  image              = "${aws_ecr_repository.search_api.repository_url}@${var.image_digests.search_api}"
   container_port     = var.container_port
   private_subnet_ids = var.private_subnet_ids
   security_group_ids = [aws_security_group.service.id]
@@ -818,7 +850,7 @@ module "enrichment_worker" {
   cluster_arn        = aws_ecs_cluster.main.arn
   execution_role_arn = aws_iam_role.ecs_task_execution.arn
   task_role_arn      = aws_iam_role.app_task.arn
-  image              = "${aws_ecr_repository.enrichment_worker.repository_url}:latest"
+  image              = "${aws_ecr_repository.enrichment_worker.repository_url}@${var.image_digests.enrichment_worker}"
   container_port     = var.container_port
   private_subnet_ids = var.private_subnet_ids
   security_group_ids = [aws_security_group.service.id]
@@ -829,6 +861,39 @@ module "enrichment_worker" {
   assign_public_ip   = var.assign_public_ip
 }
 
+resource "aws_appautoscaling_target" "enrichment_worker" {
+  max_capacity       = var.worker_max_count
+  min_capacity       = var.worker_min_count
+  resource_id        = "service/${aws_ecs_cluster.main.name}/${module.enrichment_worker.service_name}"
+  scalable_dimension = "ecs:service:DesiredCount"
+  service_namespace  = "ecs"
+}
+
+resource "aws_appautoscaling_policy" "enrichment_worker_queue_depth" {
+  name               = "${local.name}-worker-queue-depth"
+  policy_type        = "TargetTrackingScaling"
+  resource_id        = aws_appautoscaling_target.enrichment_worker.resource_id
+  scalable_dimension = aws_appautoscaling_target.enrichment_worker.scalable_dimension
+  service_namespace  = aws_appautoscaling_target.enrichment_worker.service_namespace
+
+  target_tracking_scaling_policy_configuration {
+    target_value       = var.worker_queue_target_depth
+    scale_in_cooldown  = 120
+    scale_out_cooldown = 30
+
+    customized_metric_specification {
+      metric_name = "ApproximateNumberOfMessagesVisible"
+      namespace   = "AWS/SQS"
+      statistic   = "Average"
+
+      dimensions {
+        name  = "QueueName"
+        value = aws_sqs_queue.product_jobs.name
+      }
+    }
+  }
+}
+
 locals {
   service_environment = {
     PRODUCT_TABLE_NAME         = aws_dynamodb_table.product_enrichments.name
@@ -837,6 +902,7 @@ locals {
     SESSIONS_TABLE_NAME        = aws_dynamodb_table.sessions.name
     API_KEYS_TABLE_NAME        = aws_dynamodb_table.api_keys.name
     USAGE_TABLE_NAME           = aws_dynamodb_table.usage_counters.name
+    RATE_LIMITS_TABLE_NAME     = aws_dynamodb_table.rate_limits.name
     SEARCH_CACHE_TABLE_NAME    = aws_dynamodb_table.search_cache.name
     SEARCH_CACHE_TTL_SECONDS   = tostring(60 * 60 * 24 * 30)
     JOBS_TABLE_NAME            = aws_dynamodb_table.ingestion_jobs.name
@@ -972,6 +1038,12 @@ resource "aws_apigatewayv2_route" "job_errors" {
   target    = "integrations/${aws_apigatewayv2_integration.alb.id}"
 }
 
+resource "aws_apigatewayv2_route" "retry_job_failures" {
+  api_id    = aws_apigatewayv2_api.http.id
+  route_key = "POST /ingestion-jobs/{job_id}/retry-failures"
+  target    = "integrations/${aws_apigatewayv2_integration.alb.id}"
+}
+
 resource "aws_apigatewayv2_route" "search" {
   api_id    = aws_apigatewayv2_api.http.id
   route_key = "POST /search"
@@ -1039,4 +1111,194 @@ resource "aws_cloudwatch_log_group" "api_gateway" {
   name              = "/aws/apigateway/${local.name}"
   retention_in_days = 30
   tags              = local.tags
+}
+
+resource "aws_cloudwatch_log_metric_filter" "worker_failures" {
+  name           = "${local.name}-worker-failures"
+  log_group_name = aws_cloudwatch_log_group.services.name
+  pattern        = "\"Failed to process product\""
+
+  metric_transformation {
+    name      = "WorkerFailures"
+    namespace = "Snyf/${var.environment}"
+    value     = "1"
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "api_errors" {
+  alarm_name          = "${local.name}-api-5xx"
+  alarm_description   = "HTTP API returned server errors."
+  namespace           = "AWS/ApiGateway"
+  metric_name         = "5xx"
+  statistic           = "Sum"
+  period              = 60
+  evaluation_periods  = 2
+  threshold           = 5
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = local.alarm_actions
+  ok_actions          = local.alarm_actions
+
+  dimensions = {
+    ApiId = aws_apigatewayv2_api.http.id
+    Stage = aws_apigatewayv2_stage.default.name
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "api_latency" {
+  alarm_name          = "${local.name}-api-latency-p95"
+  alarm_description   = "HTTP API p95 latency exceeded two seconds."
+  namespace           = "AWS/ApiGateway"
+  metric_name         = "Latency"
+  extended_statistic  = "p95"
+  period              = 60
+  evaluation_periods  = 3
+  threshold           = 2000
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = local.alarm_actions
+  ok_actions          = local.alarm_actions
+
+  dimensions = {
+    ApiId = aws_apigatewayv2_api.http.id
+    Stage = aws_apigatewayv2_stage.default.name
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "queue_depth" {
+  alarm_name          = "${local.name}-queue-depth"
+  alarm_description   = "The enrichment queue is backing up."
+  namespace           = "AWS/SQS"
+  metric_name         = "ApproximateNumberOfMessagesVisible"
+  statistic           = "Average"
+  period              = 60
+  evaluation_periods  = 5
+  threshold           = var.worker_queue_target_depth * var.worker_max_count
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = local.alarm_actions
+  ok_actions          = local.alarm_actions
+
+  dimensions = {
+    QueueName = aws_sqs_queue.product_jobs.name
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "dlq_depth" {
+  alarm_name          = "${local.name}-dlq-depth"
+  alarm_description   = "One or more enrichment messages reached the DLQ."
+  namespace           = "AWS/SQS"
+  metric_name         = "ApproximateNumberOfMessagesVisible"
+  statistic           = "Average"
+  period              = 60
+  evaluation_periods  = 1
+  threshold           = 1
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = local.alarm_actions
+  ok_actions          = local.alarm_actions
+
+  dimensions = {
+    QueueName = aws_sqs_queue.product_jobs_dlq.name
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "worker_failures" {
+  alarm_name          = "${local.name}-worker-failures"
+  alarm_description   = "Enrichment workers logged repeated product failures."
+  namespace           = "Snyf/${var.environment}"
+  metric_name         = "WorkerFailures"
+  statistic           = "Sum"
+  period              = 300
+  evaluation_periods  = 1
+  threshold           = 3
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = local.alarm_actions
+  ok_actions          = local.alarm_actions
+}
+
+resource "aws_cloudwatch_metric_alarm" "opensearch_red" {
+  alarm_name          = "${local.name}-opensearch-red"
+  alarm_description   = "OpenSearch cluster entered red status."
+  namespace           = "AWS/ES"
+  metric_name         = "ClusterStatus.red"
+  statistic           = "Maximum"
+  period              = 60
+  evaluation_periods  = 1
+  threshold           = 1
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  treat_missing_data  = "breaching"
+  alarm_actions       = local.alarm_actions
+  ok_actions          = local.alarm_actions
+
+  dimensions = {
+    DomainName = aws_opensearch_domain.catalog.domain_name
+    ClientId   = data.aws_caller_identity.current.account_id
+  }
+}
+
+resource "aws_cloudwatch_dashboard" "operations" {
+  dashboard_name = "${local.name}-operations"
+  dashboard_body = jsonencode({
+    widgets = [
+      {
+        type   = "metric"
+        x      = 0
+        y      = 0
+        width  = 12
+        height = 6
+        properties = {
+          title  = "API errors and latency"
+          region = var.aws_region
+          metrics = [
+            ["AWS/ApiGateway", "5xx", "ApiId", aws_apigatewayv2_api.http.id, "Stage", aws_apigatewayv2_stage.default.name, { stat = "Sum" }],
+            [".", "Latency", ".", ".", ".", ".", { stat = "p95", yAxis = "right" }]
+          ]
+        }
+      },
+      {
+        type   = "metric"
+        x      = 12
+        y      = 0
+        width  = 12
+        height = 6
+        properties = {
+          title  = "Queue and DLQ depth"
+          region = var.aws_region
+          metrics = [
+            ["AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", aws_sqs_queue.product_jobs.name],
+            [".", ".", ".", aws_sqs_queue.product_jobs_dlq.name]
+          ]
+        }
+      },
+      {
+        type   = "metric"
+        x      = 0
+        y      = 6
+        width  = 12
+        height = 6
+        properties = {
+          title   = "Worker failures"
+          region  = var.aws_region
+          metrics = [["Snyf/${var.environment}", "WorkerFailures"]]
+        }
+      },
+      {
+        type   = "metric"
+        x      = 12
+        y      = 6
+        width  = 12
+        height = 6
+        properties = {
+          title  = "OpenSearch health"
+          region = var.aws_region
+          metrics = [
+            ["AWS/ES", "ClusterStatus.red", "DomainName", aws_opensearch_domain.catalog.domain_name, "ClientId", data.aws_caller_identity.current.account_id],
+            [".", "ClusterIndexWritesBlocked", ".", ".", ".", "."]
+          ]
+        }
+      }
+    ]
+  })
 }

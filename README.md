@@ -6,9 +6,58 @@ This repository is a portfolio MVP: it contains a runnable local implementation 
 
 For endpoint-level request/response details, see [docs/API.md](docs/API.md).
 
+## What I Built
+
+I designed and implemented the end-to-end MVP across the API, asynchronous enrichment, search, frontend, and AWS reference infrastructure:
+
+- CSV validation and collection-scoped ingestion with plan enforcement.
+- LLM/fake-provider enrichment workers with SQS retry handling, durable error metadata, safe failed-row reprocessing, and version-guarded writes.
+- OpenSearch HNSW `knn_vector` indexing, filtered k-NN retrieval, cached query parsing/embeddings, and bounded attribute-level reranking.
+- Customer signup, email verification, session authentication, and one-time-display API keys stored only as hashes.
+- Atomic DynamoDB quota reservations and shared DynamoDB-backed demo rate limiting.
+- Terraform for API Gateway, ECS, SQS, DynamoDB, OpenSearch, autoscaling, alarms, dashboards, immutable image digests, and automatic ECS rollback.
+- A deterministic local/fake-provider path, API documentation, tests, and validation-only CI suitable for reviewing the project without cloud credentials.
+
+## Architecture
+
+```mermaid
+flowchart LR
+  subgraph Local[Implemented local MVP]
+    Browser[Static frontend] --> LocalAPI[FastAPI ingestion and search]
+    LocalAPI --> JSON[(JSON state and vector index)]
+    LocalAPI --> Fake[Deterministic fake provider]
+    LocalAPI --> LocalWorker[In-process worker]
+  end
+
+  subgraph AWS[Implemented AWS reference architecture - not currently deployed]
+    Client[Customer or demo client] --> APIGW[API Gateway]
+    APIGW --> ALB[Internal ALB]
+    ALB --> APIs[ECS ingestion and search APIs]
+    APIs --> DDB[(DynamoDB auth, quotas, cache, rate limits)]
+    APIs --> SQS[SQS product queue]
+    SQS --> Workers[ECS enrichment workers]
+    Workers --> LLM[Configured LLM provider]
+    Workers --> OS[(OpenSearch knn_vector index)]
+    APIs --> OS
+    QueueMetric[SQS queue depth] --> Scaling[ECS worker autoscaling]
+    CW[CloudWatch alarms and dashboard] --- APIs
+    CW --- SQS
+    CW --- Workers
+    CW --- OS
+  end
+
+  subgraph Future[Future validation, not claimed]
+    Load[Production load and cost testing]
+    DR[Disaster-recovery exercises]
+    Live[Live hosted service and SLO evidence]
+  end
+```
+
+The local path intentionally uses small JSON files and application-side vector math so the project runs without AWS. The AWS adapter does not use that scan path: it creates an HNSW `knn_vector` mapping and sends a collection-filtered k-NN query to OpenSearch. Attribute-level reranking runs only over the bounded candidate set returned by OpenSearch.
+
 ## What It Does
 
-- Customers sign up and receive an API key.
+- Customers sign up and receive an API key that is displayed once and stored only as a SHA-256 hash.
 - Customers upload/index a CSV for a `collection_id`.
 - Each collection is mapped to an attribute-list file, for example `fashion-v1.json`.
 - The enrichment worker reads product metadata/images and asks an LLM to fill exactly those attributes.
@@ -62,6 +111,16 @@ python -m services.search_api.main "flowy beach wedding look" \
   --data-dir data \
   --top-k 10
 ```
+
+## Local Fake-Provider Demo
+
+These screenshots were captured from this repository running locally with `LLM_PROVIDER=fake` and [examples/demo_catalog.csv](examples/demo_catalog.csv). They do not depict a hosted production service.
+
+![Snyf local landing page with seeded search results](docs/screenshots/local-home.png)
+
+![Snyf local semantic-search demo with five seeded products](docs/screenshots/local-demo.png)
+
+To reproduce the demo, ingest the fixture, start the search API with `SNYF_DATA_DIR` and `DEMO_COLLECTION_ID=coll_demo`, serve `frontend/`, and open `demo.html?api=http://127.0.0.1:8001`.
 
 ## Attribute List
 
@@ -441,13 +500,13 @@ curl -sS -X POST "$SEARCH_URL/search/demo/keyword" \
 ```
 
 These endpoints do not accept `collection_id`, `top_k`, or `x-api-key`; protected customer apps should use `/search` and `/search/keyword`.
-They are still rate limited per client and return `429` if the public demo is overused.
+They are still rate limited per client and return `429` if the public demo is overused. AWS deployments use a shared DynamoDB counter with TTL; local development uses an in-process fallback.
 
 ## Search Flow
 
 1. Validate `top_k` is between `1` and `100`.
 2. Validate `x-api-key`.
-3. Reserve one search request against the customer's monthly plan.
+3. Atomically reserve one search request against the customer's monthly plan with a DynamoDB conditional update.
 4. Confirm the collection belongs to the authenticated customer.
 5. Load the collection's registered attribute list.
 6. Embed the query. Search checks in-memory cache first, then the shared DynamoDB search cache, then the configured embedding provider.
@@ -492,13 +551,14 @@ Latency instrumentation:
 4. Load and validate the attribute list.
 5. Register `collection_id -> attribute_list_id`, plus the backend-resolved internal S3 URI.
 6. Validate CSV rows permissively.
-7. Enqueue one product message per accepted row.
+7. Assign the next product version and enqueue one product message per accepted row.
 8. Worker downloads images from the public URLs supplied in the CSV.
 9. Worker calls the enrichment LLM with product metadata, images, and the collection attribute list.
-10. Worker parses and validates the returned JSON. Empty enriched attributes, missing images, or empty embeddings fail the product and send the message to the DLQ.
+10. Worker extends SQS visibility while processing, parses and validates the returned JSON, and records bounded retry/error metadata on failure. SQS retries up to the configured DLQ threshold.
 11. Worker embeds the enriched product text for retrieval.
 12. Worker embeds each enriched attribute value once and stores those vectors as `attribute_embeddings`.
-13. Worker writes product state to DynamoDB and a denormalized searchable product document to OpenSearch, including `image_urls`, metadata, full product embedding, enriched attrs, and per-attribute embeddings.
+13. Worker writes product state to DynamoDB with a conditional version guard and writes OpenSearch with external versioning, preventing delayed SQS messages from overwriting newer enrichments.
+14. Operators can inspect durable job errors and conditionally requeue only rows that are still failed at the expected version.
 
 ## Plan Limits
 
@@ -525,7 +585,7 @@ ENTERPRISE:
 
 Ingestion row limits count product rows only. The CSV header is not counted. Customers can regenerate API keys, but each plan caps active keys. When a customer creates a new key at the active-key limit, the oldest active key is deactivated.
 
-Usage is tracked monthly in `UsageCounters`.
+Usage is tracked monthly in `UsageCounters`. AWS reservations are atomic conditional updates, so concurrent requests cannot overspend a plan limit through a read-modify-write race.
 
 ## Infrastructure
 
@@ -546,6 +606,7 @@ It provisions:
   - `Sessions`
   - `ApiKeys`
   - `UsageCounters`
+  - `RateLimits`
   - `Collections`
   - `ProductEnrichments`
   - `SearchCache`
@@ -556,6 +617,9 @@ It provisions:
 - OpenSearch domain
 - IAM roles and policies
 - CloudWatch log groups
+- SQS queue-depth target tracking for the enrichment worker
+- CloudWatch alarms for API errors/latency, queue and DLQ depth, worker failures, and OpenSearch red status
+- CloudWatch operations dashboard covering the same service-health signals
 
 Signup verification email:
 
@@ -593,6 +657,20 @@ terraform -chdir=infra/terraform validate
 ```
 
 The configuration is retained as an architecture example. Before using it in an AWS account, supply your own backend configuration and variables, review every resource and cost implication, and create a separate deployment process. This public repository intentionally provides no automated plan or apply path.
+
+## Immutable Images and Rollback
+
+Terraform registers every ECS task definition with an ECR digest, never `:latest`. A private deployment supplies all three values:
+
+```hcl
+image_digests = {
+  ingestion_api     = "sha256:<64 lowercase hex characters>"
+  search_api        = "sha256:<64 lowercase hex characters>"
+  enrichment_worker = "sha256:<64 lowercase hex characters>"
+}
+```
+
+The digest object is required: Terraform has no mutable-tag or placeholder fallback. Record the digest set with each release. ECS deployment circuit breakers are enabled with automatic rollback, so a deployment that cannot reach steady state returns to the last healthy task definition. For a manual rollback, restore the previous known-good digest set in the private deployment configuration, review the Terraform plan, and run that deployment process again.
 
 ## Validation Workflows
 
@@ -639,11 +717,17 @@ docker buildx build --platform linux/amd64 \
 
 ## Production Readiness Gaps
 
-- Harden the DynamoDB/SQS/OpenSearch adapters for pagination, conditional writes, and operational backfills.
-- An OpenAI-backed provider is implemented in [functions/openai_llm.py](functions/openai_llm.py); any deployment must inject credentials through a secret manager.
-- Keep [functions/fake_llm.py](functions/fake_llm.py) for deterministic local and infrastructure-only smoke tests.
-- Add retry metadata and job-error persistence for failed worker rows.
-- Add job status and job error endpoints backed by `IngestionJobs` and `IngestionJobErrors`.
+This repository implements the production-oriented mechanisms in code and Terraform, but it does not claim that they are deployed or proven under production traffic.
+
+- The local/fake-provider adapter intentionally scans a small JSON vector index and performs cosine math in process. The AWS adapter uses filtered OpenSearch k-NN retrieval; application-side attribute reranking is limited to that bounded candidate set.
+- The DynamoDB quota and version guards, shared rate limiter, SQS retry/error flow, autoscaling, alarms, dashboard, and digest-pinned task definitions are covered by unit/static validation but have not been load-tested in a live AWS environment.
+- Failed-row requeue uses a conditional DynamoDB transition followed by SQS send. A high-scale deployment should add a transactional outbox if it requires atomic state-and-message publication across service failures.
+- OpenSearch collection reads paginate with `search_after`, but large-catalog latency, recall, shard sizing, and cost need measurement against representative data.
+- The in-memory local rate limiter is for one-process development only. Shared enforcement requires the AWS `RateLimits` table or an equivalent gateway/shared store.
+- CloudWatch alarms are defined, but thresholds and notification routing must be calibrated for the deployment's traffic and SLOs.
+- A real deployment must build and publish the three images first, provide their ECR digests to Terraform, and retain previous digest sets for rollback.
+- An OpenAI-backed provider is implemented in [functions/openai_llm.py](functions/openai_llm.py); deployments must inject credentials through a secret manager. [functions/fake_llm.py](functions/fake_llm.py) remains for deterministic local and infrastructure-only testing.
+- No public endpoint, uptime history, production SLO, disaster-recovery exercise, or production cost benchmark is claimed.
 
 ## License
 

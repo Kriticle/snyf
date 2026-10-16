@@ -179,7 +179,7 @@ curl -sS -X POST "$API_URL/auth/login" \
 
 ## API Keys
 
-Lists the customer's API keys. New keys include the retrievable `api_key` value. Older keys created before this field existed may have `api_key: null`.
+Lists API-key metadata for the customer. Raw key values are never included: the service stores only SHA-256 hashes and displays a raw key once, in the response that creates it.
 
 ```http
 GET /auth/api-keys
@@ -193,7 +193,7 @@ curl -sS "$API_URL/auth/api-keys" \
   -H "authorization: Bearer $REFRESH_TOKEN"
 ```
 
-Creates another API key for the logged-in customer and returns the raw key.
+Creates another API key for the logged-in customer and returns the raw key once. Copy it immediately; it cannot be retrieved later.
 
 ```http
 POST /auth/api-keys
@@ -205,6 +205,18 @@ Example:
 ```bash
 curl -sS -X POST "$API_URL/auth/api-keys" \
   -H "authorization: Bearer $REFRESH_TOKEN"
+```
+
+Example one-time response:
+
+```json
+{
+  "api_key_id": "key_...",
+  "api_key": "fep_...",
+  "status": "ACTIVE",
+  "created_at": "2026-10-16T12:00:00+00:00",
+  "last_used_at": null
+}
 ```
 
 ## Upload Catalog CSV
@@ -287,7 +299,7 @@ Response:
       "attribute_schema": ["occasion", "silhouette", "fabric_feel"],
       "operation": "UPSERT",
       "attribute_list_uri": "s3://configured-attribute-bucket/attributes/fashion-v1.json",
-      "version": 0
+      "version": 1
     }
   ]
 }
@@ -347,6 +359,17 @@ Failed rows:
 GET /ingestion-jobs/{job_id}/errors
 x-api-key: fep_...
 ```
+
+The error response includes durable retry metadata: product/version, attempt number, error code, a bounded error message, and timestamp.
+
+Safely requeue the job's currently failed rows:
+
+```http
+POST /ingestion-jobs/{job_id}/retry-failures
+x-api-key: fep_...
+```
+
+The retry transition is conditional on the product still being failed at the expected version. Concurrent retry requests therefore cannot enqueue different versions of the same failure. Older SQS deliveries are acknowledged without overwriting newer DynamoDB or OpenSearch state.
 
 ## Search
 
@@ -491,7 +514,7 @@ Notes:
 
 - These endpoints do not accept `collection_id`, `top_k`, or `x-api-key`.
 - The backend uses `DEMO_COLLECTION_ID` and a fixed server-side `DEMO_TOP_K`.
-- Public demo requests are still rate limited per client and return `429` when exceeded.
+- Public demo requests are still rate limited per client and return `429` when exceeded. AWS uses a shared DynamoDB counter with TTL; local development uses an in-process fallback.
 - Customer products must use protected `/search` and `/search/keyword`.
 
 ## Plan Limits
@@ -506,7 +529,7 @@ Current defaults:
 | `PRO` | 10,000 | 100,000 | 5 |
 | `ENTERPRISE` | 1,000,000 | 10,000,000 | 25 |
 
-Ingestion row limits count product rows only. The CSV header is not counted. API keys can be regenerated, but each plan caps the number of active keys; when the cap is reached, the oldest active key is deactivated.
+Ingestion row limits count product rows only. The CSV header is not counted. DynamoDB quota reservations use conditional updates so concurrent requests cannot overspend the same limit. API keys can be regenerated, but each plan caps the number of active keys; when the cap is reached, the oldest active key is deactivated.
 
 Limit error example:
 
@@ -520,8 +543,13 @@ Limit error example:
 
 - The Terraform reference architecture uses API Gateway HTTP API for routing.
 - Customer API auth is app-level via `x-api-key`.
+- Raw API keys are returned once and only their SHA-256 hashes are retained.
 - Product images remain hosted by the customer/CDN; we store and return their URLs.
 - The AWS storage adapter reads attribute-list files from S3.
 - The OpenAI provider expects `OPENAI_API_KEY` to be supplied through a secret manager in any deployment.
-- Search uses OpenSearch kNN vector retrieval and a DynamoDB `SearchCache` table for persistent query/embedding cache entries with TTL.
+- Search uses a collection-filtered OpenSearch HNSW `knn_vector` query and a DynamoDB `SearchCache` table for persistent query/embedding cache entries with TTL. Collection reads use `search_after` pagination rather than a 10,000-document scan.
+- Product state uses DynamoDB conditional version writes and OpenSearch external versioning so delayed queue messages cannot replace newer enrichments.
+- Workers extend SQS visibility, persist bounded retry/error metadata, send exhausted messages to a DLQ, and support conditional failed-row requeue plus dry-run/only-missing attribute backfill.
+- Worker count tracks SQS queue depth. CloudWatch alarms and a dashboard cover API errors/latency, queue and DLQ depth, worker failures, and OpenSearch health.
+- ECS task definitions use immutable ECR digests and deployment circuit breakers with rollback enabled.
 - `llm_provider=fake` supports deterministic local and infrastructure-only smoke tests.

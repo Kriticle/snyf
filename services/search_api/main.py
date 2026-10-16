@@ -19,9 +19,11 @@ logger = logging.getLogger(__name__)
 
 try:
     from fastapi import FastAPI, Header, HTTPException, Request
+    from fastapi.middleware.cors import CORSMiddleware
     from pydantic import BaseModel
 except ImportError:  # pragma: no cover - optional runtime adapter
     FastAPI = None
+    CORSMiddleware = None
     Header = HTTPException = Request = None
     BaseModel = object
     Field = None
@@ -46,11 +48,18 @@ def create_app(data_dir: str = "data"):
         raise RuntimeError("FastAPI is not installed. Use the CLI mode or install requirements.txt.")
 
     app = FastAPI(title="Fashion Attribute Enrichment - Search API")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[origin.strip() for origin in os.getenv("SNYF_CORS_ORIGINS", "http://127.0.0.1:4173").split(",")],
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["content-type", "x-api-key"],
+    )
     store = create_store(data_dir)
     service = SearchService(store)
     auth_service = AuthService(store)
     usage_service = UsageService(store)
-    demo_rate_limiter = DemoRateLimiter.from_environment()
+    demo_rate_limiter = demo_rate_limiter_for(store)
 
     @app.get("/health")
     def health():
@@ -236,6 +245,32 @@ class DemoRateLimiter:
         bucket.append(now)
 
 
+class SharedDemoRateLimiter:
+    def __init__(self, store, limit: int, window_seconds: int = 60) -> None:
+        self.store = store
+        self.limit = limit
+        self.window_seconds = window_seconds
+
+    def check(self, client_id: str) -> None:
+        now = int(time.time())
+        window_start = now - (now % self.window_seconds)
+        allowed = self.store.reserve_demo_request(
+            client_id=client_id,
+            window_start=window_start,
+            limit=self.limit,
+            ttl=window_start + (self.window_seconds * 2),
+        )
+        if not allowed:
+            raise DemoRateLimitError("Demo search rate limit exceeded. Please try again in a minute.")
+
+
+def demo_rate_limiter_for(store):
+    limit = max(int(os.getenv("DEMO_RATE_LIMIT_PER_MINUTE", "30")), 1)
+    if callable(getattr(store, "reserve_demo_request", None)):
+        return SharedDemoRateLimiter(store, limit=limit)
+    return DemoRateLimiter(limit=limit)
+
+
 def demo_client_id(request: Request) -> str:
     forwarded_for = request.headers.get("x-forwarded-for")
     if forwarded_for:
@@ -245,7 +280,7 @@ def demo_client_id(request: Request) -> str:
     return "unknown"
 
 
-app = create_app() if FastAPI is not None else None
+app = create_app(os.getenv("SNYF_DATA_DIR", "data")) if FastAPI is not None else None
 
 
 def serialize(value):

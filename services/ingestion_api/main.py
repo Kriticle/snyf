@@ -15,7 +15,7 @@ from shared.attribute_loader import load_attribute_list
 from shared.auth import AuthError, AuthService
 from shared.csv_ingestion import CsvIngestionService
 from shared.email import create_email_sender
-from shared.models import ProductRecord, ProductStatus
+from shared.models import IngestionMessage, Operation, ProductRecord, ProductStatus
 from shared.plans import PlanLimitError, UsageService
 from shared.store_factory import create_store
 
@@ -146,12 +146,44 @@ def create_app(data_dir: str = "data", expose_verification_code: bool = False):
         records = records_for_owned_job(store, job_id, customer.customer_id)
         if not records:
             raise HTTPException(status_code=404, detail="Ingestion job not found.")
+        persisted_errors = getattr(store, "job_errors_for_job", lambda unused: [])(job_id)
         failed = [record for record in records if record.status == ProductStatus.FAILED]
         return {
             "job_id": job_id,
             "failed_rows": len(failed),
-            "errors": [job_error_payload(record) for record in failed],
+            "errors": persisted_errors or [job_error_payload(record) for record in failed],
         }
+
+    @app.post("/ingestion-jobs/{job_id}/retry-failures")
+    def retry_ingestion_job_failures(job_id: str, x_api_key: str | None = Header(default=None)):
+        customer = authenticate_request(auth_service, x_api_key)
+        records = records_for_owned_job(store, job_id, customer.customer_id)
+        if not records:
+            raise HTTPException(status_code=404, detail="Ingestion job not found.")
+        requeued = 0
+        skipped = 0
+        for record in records:
+            if record.status != ProductStatus.FAILED:
+                continue
+            prepared = store.prepare_retry(record)
+            if prepared is None:
+                skipped += 1
+                continue
+            store.enqueue(
+                IngestionMessage(
+                    customer_id=prepared.customer_id,
+                    collection_id=prepared.collection_id,
+                    product_id=prepared.product_id,
+                    image_urls=prepared.image_urls,
+                    metadata=dict(prepared.raw_metadata),
+                    attribute_schema=prepared.attribute_schema,
+                    operation=Operation.UPSERT,
+                    attribute_list_uri=prepared.attribute_list_uri,
+                    version=prepared.version,
+                )
+            )
+            requeued += 1
+        return {"job_id": job_id, "requeued_rows": requeued, "skipped_rows": skipped}
 
     @app.post("/collections/{collection_id}/upload")
     async def upload_collection(
@@ -220,7 +252,10 @@ def require_email_verification() -> bool:
 
 
 app = (
-    create_app(expose_verification_code=os.getenv("EXPOSE_VERIFICATION_CODE", "").lower() in {"1", "true", "yes"})
+    create_app(
+        data_dir=os.getenv("SNYF_DATA_DIR", "data"),
+        expose_verification_code=os.getenv("EXPOSE_VERIFICATION_CODE", "").lower() in {"1", "true", "yes"},
+    )
     if FastAPI is not None
     else None
 )

@@ -179,7 +179,7 @@ class CsvIngestionService:
                 attribute_schema=attributes,
                 operation=operation,
                 attribute_list_uri=self.attribute_list_uri,
-                version=existing.version if existing else 0,
+                version=(existing.version + 1) if existing else 1,
             ),
             issues,
         )
@@ -243,7 +243,7 @@ class CsvIngestionService:
                 currency=message.metadata.get("currency"),
                 brand=message.metadata.get("brand"),
                 status=ProductStatus.QUEUED,
-                version=existing.version if existing else 0,
+                version=message.version,
             )
         )
 
